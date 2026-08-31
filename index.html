@@ -1464,13 +1464,18 @@ function openTaskModal(taskId){
   const recHint = overlay.querySelector('#f_rec_hint');
   const recTipoSel = overlay.querySelector('#f_rec_tipo');
   const recDiasWrap = overlay.querySelector('#f_rec_dias_wrap');
+  function syncRecDiasVisibility(){
+    recDiasWrap.style.display = recTipoSel.value==='dias' ? 'block' : 'none';
+  }
   function toggleRecUI(){
     const on = recCheckbox.checked;
     recWrap.style.display = on ? 'grid' : 'none';
     recHint.style.display = on ? 'block' : 'none';
+    if(on) syncRecDiasVisibility();
   }
   recCheckbox.onchange = toggleRecUI;
-  recTipoSel.onchange = ()=>{ recDiasWrap.style.display = recTipoSel.value==='dias' ? 'block' : 'none'; };
+  recTipoSel.onchange = syncRecDiasVisibility;
+  syncRecDiasVisibility(); // garante que o campo de dias já apareça certo ao abrir (ex.: editando tarefa existente)
 
   let curStatus = t.status;
   overlay.querySelectorAll('#f_status button').forEach(b=>b.onclick=()=>{
