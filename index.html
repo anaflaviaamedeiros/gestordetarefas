@@ -148,6 +148,21 @@
   .btn.danger{background:var(--rust);border-color:var(--rust);}
   .chip-clear{font-size:12.5px;color:var(--muted);text-decoration:underline;background:none;border:none;padding:4px 2px;}
 
+  .bulk-bar{
+    display:flex;align-items:center;gap:10px;flex-wrap:wrap;
+    background:var(--ink);color:var(--paper);
+    padding:10px 14px;border-radius:9px;margin-bottom:14px;
+    font-size:13px;
+  }
+  .bulk-bar .count{font-weight:700;font-family:var(--font-mono);}
+  .bulk-bar .spacer{flex:1;}
+  .bulk-bar button{
+    padding:6px 12px;border-radius:6px;border:1px solid rgba(255,255,255,.3);
+    background:rgba(255,255,255,.08);color:var(--paper);font-size:12.5px;font-weight:600;
+  }
+  .bulk-bar button:hover{background:rgba(255,255,255,.18);}
+  .bulk-bar button.danger{background:var(--rust);border-color:var(--rust);}
+
   /* ---------- Kanban ---------- */
   .board{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;align-items:start;}
   .col{background:var(--paper-dim);border-radius:var(--radius);padding:10px;min-height:80px;}
@@ -366,6 +381,7 @@ let state = null;
 let filters = { inst:'', proj:'', resp:'', status:'', tipo:'' };
 let activeTab = 'tarefas';
 let taskViewMode = 'lista';
+let selectedTaskIds = new Set();
 let saveTimer = null;
 
 /* ================== API (Google Sheets via Apps Script) ================== */
@@ -609,7 +625,7 @@ function renderTabs(){
     <button data-tab="links" class="${activeTab==='links'?'active':''}">Central de Links <span class="count">${state.links.length}</span></button>
     <button data-tab="config" class="${activeTab==='config'?'active':''}">Configurações</button>
   `;
-  nav.querySelectorAll('button').forEach(b=>b.onclick=()=>{ activeTab=b.dataset.tab; render(); });
+  nav.querySelectorAll('button').forEach(b=>b.onclick=()=>{ activeTab=b.dataset.tab; selectedTaskIds.clear(); render(); });
 }
 
 function countCertAlerts(){
@@ -725,14 +741,38 @@ function renderTarefasLista(c, list){
     return;
   }
   const sorted = [...list].sort((a,b)=>(a.prazo||'9999').localeCompare(b.prazo||'9999'));
+  const visibleIds = sorted.map(t=>t.id);
+
+  if(selectedTaskIds.size>0){
+    const bar = document.createElement('div');
+    bar.className='bulk-bar';
+    bar.innerHTML = `
+      <span class="count">${selectedTaskIds.size} selecionada(s)</span>
+      <div class="spacer"></div>
+      <button id="bulkAfazer">Marcar: A Fazer</button>
+      <button id="bulkAndamento">Marcar: Em Andamento</button>
+      <button id="bulkConcluido">Marcar: Concluído</button>
+      <button id="bulkDelete" class="danger">Excluir</button>
+      <button id="bulkClear">Cancelar</button>
+    `;
+    c.appendChild(bar);
+    bar.querySelector('#bulkAfazer').onclick = ()=>bulkSetStatus('afazer');
+    bar.querySelector('#bulkAndamento').onclick = ()=>bulkSetStatus('andamento');
+    bar.querySelector('#bulkConcluido').onclick = ()=>bulkSetStatus('concluido');
+    bar.querySelector('#bulkDelete').onclick = bulkDeleteTasks;
+    bar.querySelector('#bulkClear').onclick = ()=>{ selectedTaskIds.clear(); render(); };
+  }
+
   const wrap = document.createElement('div');
   wrap.style.overflowX='auto';
   wrap.style.border='1px solid var(--line)';
   wrap.style.borderRadius='10px';
+  const allSelected = visibleIds.length>0 && visibleIds.every(id=>selectedTaskIds.has(id));
   wrap.innerHTML = `
-    <table style="width:100%;border-collapse:collapse;font-size:13px;background:var(--white);min-width:820px;">
+    <table style="width:100%;border-collapse:collapse;font-size:13px;background:var(--white);min-width:860px;">
       <thead>
         <tr style="background:var(--paper-dim);">
+          <th style="padding:10px 8px;width:32px;"><input type="checkbox" id="selectAllTasks" ${allSelected?'checked':''}></th>
           <th style="text-align:left;padding:10px 12px;">Tarefa</th>
           <th style="text-align:left;padding:10px 12px;">Tipo</th>
           <th style="text-align:left;padding:10px 12px;">Instituição</th>
@@ -746,6 +786,11 @@ function renderTarefasLista(c, list){
       <tbody></tbody>
     </table>
   `;
+  wrap.querySelector('#selectAllTasks').onclick = (e)=>{
+    if(e.target.checked){ visibleIds.forEach(id=>selectedTaskIds.add(id)); }
+    else { visibleIds.forEach(id=>selectedTaskIds.delete(id)); }
+    render();
+  };
   const tbody = wrap.querySelector('tbody');
   sorted.forEach(t=>{
     const inst = instById(t.instituicaoId);
@@ -753,22 +798,26 @@ function renderTarefasLista(c, list){
     const resp = membroById(t.responsavelId);
     const solic = membroById(t.solicitanteId);
     const info = statusColorInfo(t);
+    const checked = selectedTaskIds.has(t.id);
     const tr = document.createElement('tr');
     tr.style.borderTop='1px solid var(--line-soft)';
-    tr.style.cursor='pointer';
-    tr.onmouseenter = ()=>{ tr.style.background='var(--paper-dim)'; };
-    tr.onmouseleave = ()=>{ tr.style.background=''; };
+    if(checked) tr.style.background='var(--gold-soft)';
     tr.innerHTML = `
-      <td style="padding:9px 12px;font-weight:600;">${t.recorrencia?'🔁 ':''}${escapeHtml(t.titulo)}</td>
-      <td style="padding:9px 12px;"><span class="tag type">${escapeHtml(t.tipo||'Outro')}</span></td>
-      <td style="padding:9px 12px;">${inst?escapeHtml(inst.nome):'—'}</td>
-      <td style="padding:9px 12px;">${proj?escapeHtml(proj.sigla||proj.nome):'—'}</td>
-      <td style="padding:9px 12px;">${solic?escapeHtml(solic.nome):'—'}</td>
-      <td style="padding:9px 12px;">${resp?escapeHtml(resp.nome):'—'}</td>
-      <td style="padding:9px 12px;font-family:var(--font-mono);">${t.prazo?fmtDate(t.prazo):'—'}</td>
-      <td style="padding:9px 12px;"><span class="badge ${info.cls}">${info.label}</span></td>
+      <td style="padding:9px 8px;text-align:center;"><input type="checkbox" class="rowCheck" data-id="${t.id}" ${checked?'checked':''}></td>
+      <td style="padding:9px 12px;font-weight:600;cursor:pointer;">${t.recorrencia?'🔁 ':''}${escapeHtml(t.titulo)}</td>
+      <td style="padding:9px 12px;cursor:pointer;"><span class="tag type">${escapeHtml(t.tipo||'Outro')}</span></td>
+      <td style="padding:9px 12px;cursor:pointer;">${inst?escapeHtml(inst.nome):'—'}</td>
+      <td style="padding:9px 12px;cursor:pointer;">${proj?escapeHtml(proj.sigla||proj.nome):'—'}</td>
+      <td style="padding:9px 12px;cursor:pointer;">${solic?escapeHtml(solic.nome):'—'}</td>
+      <td style="padding:9px 12px;cursor:pointer;">${resp?escapeHtml(resp.nome):'—'}</td>
+      <td style="padding:9px 12px;font-family:var(--font-mono);cursor:pointer;">${t.prazo?fmtDate(t.prazo):'—'}</td>
+      <td style="padding:9px 12px;cursor:pointer;"><span class="badge ${info.cls}">${info.label}</span></td>
     `;
-    tr.onclick = ()=>openTaskModal(t.id);
+    tr.querySelectorAll('td:not(:first-child)').forEach(td=> td.onclick = ()=>openTaskModal(t.id));
+    tr.querySelector('.rowCheck').onclick = (e)=>{
+      if(e.target.checked) selectedTaskIds.add(t.id); else selectedTaskIds.delete(t.id);
+      render();
+    };
     tbody.appendChild(tr);
   });
   c.appendChild(wrap);
@@ -1523,23 +1572,50 @@ function openTaskModal(taskId){
 
     if(isNew) state.tarefas.push(t);
 
-    const virouConcluida = curStatus==='concluido' && originalStatus!=='concluido';
-    if(virouConcluida && t.recorrencia && t.prazo){
-      const proximoPrazo = nextDateForRecurrence(t.prazo, t.recorrencia);
-      if(proximoPrazo){
-        state.tarefas.push({
-          id: uid(), titulo: t.titulo, tipo: t.tipo,
-          instituicaoId: t.instituicaoId, projetoId: t.projetoId,
-          solicitanteId: t.solicitanteId, responsavelId: t.responsavelId,
-          prazo: proximoPrazo, status: 'afazer', descricao: t.descricao,
-          recorrencia: t.recorrencia
-        });
-      }
-    }
+    maybeGenerateNextRecurrence(t, originalStatus, curStatus);
 
+    if(isNew){ filters = {inst:'',proj:'',resp:'',status:'',tipo:''}; }
     scheduleSave(); close(); render();
     toast(isNew?'Tarefa criada.':'Tarefa atualizada.');
   };
+}
+
+function maybeGenerateNextRecurrence(t, prevStatus, newStatus){
+  const virouConcluida = newStatus==='concluido' && prevStatus!=='concluido';
+  if(virouConcluida && t.recorrencia && t.prazo){
+    const proximoPrazo = nextDateForRecurrence(t.prazo, t.recorrencia);
+    if(proximoPrazo){
+      state.tarefas.push({
+        id: uid(), titulo: t.titulo, tipo: t.tipo,
+        instituicaoId: t.instituicaoId, projetoId: t.projetoId,
+        solicitanteId: t.solicitanteId, responsavelId: t.responsavelId,
+        prazo: proximoPrazo, status: 'afazer', descricao: t.descricao,
+        recorrencia: t.recorrencia
+      });
+    }
+  }
+}
+
+function bulkSetStatus(newStatus){
+  selectedTaskIds.forEach(id=>{
+    const t = state.tarefas.find(x=>x.id===id);
+    if(!t) return;
+    const prevStatus = t.status;
+    t.status = newStatus;
+    maybeGenerateNextRecurrence(t, prevStatus, newStatus);
+  });
+  selectedTaskIds.clear();
+  scheduleSave(); render();
+  toast('Status atualizado em massa.');
+}
+
+function bulkDeleteTasks(){
+  const n = selectedTaskIds.size;
+  if(!confirm(`Excluir ${n} tarefa(s) selecionada(s)? Essa ação não pode ser desfeita.`)) return;
+  state.tarefas = state.tarefas.filter(t=>!selectedTaskIds.has(t.id));
+  selectedTaskIds.clear();
+  scheduleSave(); render();
+  toast('Tarefas excluídas.');
 }
 
 function nextDateForRecurrence(dateStr, rec){
