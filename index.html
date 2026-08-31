@@ -345,6 +345,7 @@ function defaultState(){
     'Certidão FGTS','Certidão Trabalhista (CNDT)','Certidão CEPIM',
     'Certidão do TCE','COMTIBA','CMAS','Ata Eleição'
   ].map(nome=>({id:uid(), nome}));
+  const tiposTarefa = ['Contrato','Cotação','Pagamento','Documentação','Certidão','Prestação de Contas','Outro'];
   return {
     membros: [
       {id:'af', nome:'Ana Flávia'},
@@ -353,6 +354,7 @@ function defaultState(){
     ],
     instituicoes,
     certidaoTipos,
+    tiposTarefa,
     certidoes: [],
     links: [],
     tarefas: []
@@ -520,6 +522,7 @@ async function loadState(){
     }
     state = res.data ? Object.assign(defaultState(), res.data) : defaultState();
     if(!state.membros || !state.membros.length) state.membros = defaultState().membros;
+    if(!state.tiposTarefa || !state.tiposTarefa.length) state.tiposTarefa = defaultState().tiposTarefa;
     if(!res.data) await persist(true);
     setSaveState('ok');
   }catch(e){
@@ -576,7 +579,6 @@ function toast(msg){
   toast._t = setTimeout(()=>t.classList.remove('show'), 2200);
 }
 
-const TIPOS_TAREFA = ['Contrato','Cotação','Pagamento','Documentação','Certidão','Prestação de Contas','Outro'];
 const STATUS_COLS = [
   {id:'afazer', label:'A Fazer'},
   {id:'andamento', label:'Em Andamento'},
@@ -654,7 +656,7 @@ function renderTarefas(c){
       ${state.membros.map(m=>`<option value="${m.id}" ${filters.resp===m.id?'selected':''}>${escapeHtml(m.nome)}</option>`).join('')}
     </select>
     <select id="tipoFilter"><option value="">Todos tipos</option>
-      ${TIPOS_TAREFA.map(t=>`<option value="${t}" ${filters.tipo===t?'selected':''}>${t}</option>`).join('')}
+      ${state.tiposTarefa.map(t=>`<option value="${t}" ${filters.tipo===t?'selected':''}>${t}</option>`).join('')}
     </select>
     <div class="spacer"></div>
     ${(filters.inst||filters.proj||filters.resp||filters.tipo) ? `<button class="chip-clear" id="clearFilters">limpar filtros</button>` : ''}
@@ -1194,6 +1196,26 @@ function renderConfig(c){
   s2.appendChild(addTipoBtn);
   wrap.appendChild(s2);
 
+  // Tipos de tarefa
+  const s2b = document.createElement('div'); s2b.className='cfg-section';
+  s2b.innerHTML = `<h3>Tipos de tarefa</h3><div class="hint">Opções que aparecem no campo "Tipo" ao criar uma tarefa.</div>`;
+  const list2b = document.createElement('div'); list2b.className='cfg-list';
+  state.tiposTarefa.forEach((tipo, idx)=>{
+    const row = document.createElement('div'); row.className='cfg-row';
+    row.innerHTML = `
+      <input value="${escapeAttr(tipo)}" data-idx="${idx}" class="tipoTarefaNome">
+      <button class="icon-btn delTipoTarefa" data-idx="${idx}">✕</button>
+    `;
+    list2b.appendChild(row);
+  });
+  s2b.appendChild(list2b);
+  const addTipoTarefaBtn = document.createElement('button');
+  addTipoTarefaBtn.className='btn ghost small'; addTipoTarefaBtn.style.marginTop='10px';
+  addTipoTarefaBtn.textContent='+ Adicionar tipo de tarefa';
+  addTipoTarefaBtn.onclick = ()=>{ state.tiposTarefa.push('Novo tipo'); scheduleSave(); render(); };
+  s2b.appendChild(addTipoTarefaBtn);
+  wrap.appendChild(s2b);
+
   // Membros
   const s3 = document.createElement('div'); s3.className='cfg-section';
   s3.innerHTML = `<h3>Equipe</h3><div class="hint">Quem solicita e quem executa as tarefas.</div>`;
@@ -1222,6 +1244,7 @@ function renderConfig(c){
   wrap.querySelectorAll('.projSigla').forEach(inp=> inp.oninput = e=>{ projById(e.target.dataset.inst, e.target.dataset.proj).sigla = e.target.value; scheduleSave(); });
   wrap.querySelectorAll('.projNome').forEach(inp=> inp.oninput = e=>{ projById(e.target.dataset.inst, e.target.dataset.proj).nome = e.target.value; scheduleSave(); });
   wrap.querySelectorAll('.tipoNome').forEach(inp=> inp.oninput = e=>{ state.certidaoTipos.find(t=>t.id===e.target.dataset.tipo).nome = e.target.value; scheduleSave(); });
+  wrap.querySelectorAll('.tipoTarefaNome').forEach(inp=> inp.oninput = e=>{ state.tiposTarefa[parseInt(e.target.dataset.idx)] = e.target.value; scheduleSave(); });
   wrap.querySelectorAll('.membroNome').forEach(inp=> inp.oninput = e=>{ membroById(e.target.dataset.membro).nome = e.target.value; scheduleSave(); render(); });
 
   wrap.querySelectorAll('.addProj').forEach(btn=> btn.onclick = e=>{
@@ -1243,6 +1266,11 @@ function renderConfig(c){
     state.certidaoTipos = state.certidaoTipos.filter(t=>t.id!==e.target.dataset.tipo);
     scheduleSave(); render();
   });
+  wrap.querySelectorAll('.delTipoTarefa').forEach(btn=> btn.onclick = e=>{
+    if(!confirm('Remover este tipo de tarefa?')) return;
+    state.tiposTarefa.splice(parseInt(e.target.dataset.idx), 1);
+    scheduleSave(); render();
+  });
   wrap.querySelectorAll('.delMembro').forEach(btn=> btn.onclick = e=>{
     if(!confirm('Remover esta pessoa da equipe?')) return;
     state.membros = state.membros.filter(m=>m.id!==e.target.dataset.membro);
@@ -1254,7 +1282,7 @@ function renderConfig(c){
 function openTaskModal(taskId){
   const isNew = !taskId;
   const t = isNew ? {
-    id: uid(), titulo:'', tipo: TIPOS_TAREFA[0],
+    id: uid(), titulo:'', tipo: state.tiposTarefa[0],
     instituicaoId: filters.inst || (state.instituicoes[0]?state.instituicoes[0].id:''),
     projetoId:'', solicitanteId:'', responsavelId:'', prazo:'', status:'afazer', descricao:''
   } : state.tarefas.find(x=>x.id===taskId);
@@ -1273,7 +1301,7 @@ function openTaskModal(taskId){
 
         <div class="field-row">
           <div class="field"><label>Tipo</label>
-            <select id="f_tipo">${TIPOS_TAREFA.map(ti=>`<option ${t.tipo===ti?'selected':''}>${ti}</option>`).join('')}</select>
+            <select id="f_tipo">${state.tiposTarefa.map(ti=>`<option ${t.tipo===ti?'selected':''}>${ti}</option>`).join('')}</select>
           </div>
           <div class="field"><label>Prazo</label>
             <input id="f_prazo" type="date" value="${t.prazo||''}"></div>
