@@ -203,6 +203,7 @@
   .badge.warn{background:var(--warn-soft);color:var(--warn);}
   .badge.bad{background:var(--bad-soft);color:var(--bad);}
   .badge.none{background:var(--paper-dim);color:var(--muted);}
+  .badge.done{background:var(--paper-dim);color:var(--muted);}
 
   /* ---------- Config ---------- */
   .cfg-section{margin-bottom:28px;}
@@ -364,6 +365,7 @@ function defaultState(){
 let state = null;
 let filters = { inst:'', proj:'', resp:'', status:'', tipo:'' };
 let activeTab = 'tarefas';
+let taskViewMode = 'lista';
 let saveTimer = null;
 
 /* ================== API (Google Sheets via Apps Script) ================== */
@@ -660,6 +662,10 @@ function renderTarefas(c){
     </select>
     <div class="spacer"></div>
     ${(filters.inst||filters.proj||filters.resp||filters.tipo) ? `<button class="chip-clear" id="clearFilters">limpar filtros</button>` : ''}
+    <div style="display:flex;gap:0;border:1px solid var(--line);border-radius:8px;overflow:hidden;">
+      <button id="viewLista" style="border:none;padding:8px 12px;font-size:12.5px;font-weight:600;cursor:pointer;background:${taskViewMode==='lista'?'var(--ink)':'var(--white)'};color:${taskViewMode==='lista'?'var(--paper)':'var(--ink)'};">☰ Lista</button>
+      <button id="viewQuadro" style="border:none;padding:8px 12px;font-size:12.5px;font-weight:600;cursor:pointer;background:${taskViewMode==='quadro'?'var(--ink)':'var(--white)'};color:${taskViewMode==='quadro'?'var(--paper)':'var(--ink)'};">▦ Quadro</button>
+    </div>
   `;
   c.appendChild(filterBar);
 
@@ -679,6 +685,8 @@ function renderTarefas(c){
   filterBar.querySelector('#tipoFilter').onchange = e=>{ filters.tipo=e.target.value; render(); };
   const clearBtn = filterBar.querySelector('#clearFilters');
   if(clearBtn) clearBtn.onclick = ()=>{ filters={inst:'',proj:'',resp:'',status:'',tipo:''}; render(); };
+  filterBar.querySelector('#viewLista').onclick = ()=>{ taskViewMode='lista'; render(); };
+  filterBar.querySelector('#viewQuadro').onclick = ()=>{ taskViewMode='quadro'; render(); };
 
   let list = state.tarefas.filter(t=>{
     if(filters.inst && t.instituicaoId!==filters.inst) return false;
@@ -696,6 +704,77 @@ function renderTarefas(c){
     return;
   }
 
+  if(taskViewMode==='lista'){
+    renderTarefasLista(c, list);
+  } else {
+    renderTarefasBoard(c, list);
+  }
+}
+
+function statusColorInfo(t){
+  const overdue = t.status!=='concluido' && t.prazo && daysUntil(t.prazo) < 0;
+  if(t.status==='concluido') return {label:'Concluído', cls:'done'};
+  if(overdue) return {label:'Atrasada', cls:'bad'};
+  if(t.status==='andamento') return {label:'Em Andamento', cls:'warn'};
+  return {label:'A Fazer', cls:'ok'};
+}
+
+function renderTarefasLista(c, list){
+  if(list.length===0){
+    c.innerHTML += `<div class="empty-col" style="padding:30px 10px;">Nenhuma tarefa com esses filtros.</div>`;
+    return;
+  }
+  const sorted = [...list].sort((a,b)=>(a.prazo||'9999').localeCompare(b.prazo||'9999'));
+  const wrap = document.createElement('div');
+  wrap.style.overflowX='auto';
+  wrap.style.border='1px solid var(--line)';
+  wrap.style.borderRadius='10px';
+  wrap.innerHTML = `
+    <table style="width:100%;border-collapse:collapse;font-size:13px;background:var(--white);min-width:820px;">
+      <thead>
+        <tr style="background:var(--paper-dim);">
+          <th style="text-align:left;padding:10px 12px;">Tarefa</th>
+          <th style="text-align:left;padding:10px 12px;">Tipo</th>
+          <th style="text-align:left;padding:10px 12px;">Instituição</th>
+          <th style="text-align:left;padding:10px 12px;">Projeto</th>
+          <th style="text-align:left;padding:10px 12px;">Solicitado por</th>
+          <th style="text-align:left;padding:10px 12px;">Responsável</th>
+          <th style="text-align:left;padding:10px 12px;">Prazo</th>
+          <th style="text-align:left;padding:10px 12px;">Status</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+  `;
+  const tbody = wrap.querySelector('tbody');
+  sorted.forEach(t=>{
+    const inst = instById(t.instituicaoId);
+    const proj = inst ? projById(inst.id, t.projetoId) : null;
+    const resp = membroById(t.responsavelId);
+    const solic = membroById(t.solicitanteId);
+    const info = statusColorInfo(t);
+    const tr = document.createElement('tr');
+    tr.style.borderTop='1px solid var(--line-soft)';
+    tr.style.cursor='pointer';
+    tr.onmouseenter = ()=>{ tr.style.background='var(--paper-dim)'; };
+    tr.onmouseleave = ()=>{ tr.style.background=''; };
+    tr.innerHTML = `
+      <td style="padding:9px 12px;font-weight:600;">${t.recorrencia?'🔁 ':''}${escapeHtml(t.titulo)}</td>
+      <td style="padding:9px 12px;"><span class="tag type">${escapeHtml(t.tipo||'Outro')}</span></td>
+      <td style="padding:9px 12px;">${inst?escapeHtml(inst.nome):'—'}</td>
+      <td style="padding:9px 12px;">${proj?escapeHtml(proj.sigla||proj.nome):'—'}</td>
+      <td style="padding:9px 12px;">${solic?escapeHtml(solic.nome):'—'}</td>
+      <td style="padding:9px 12px;">${resp?escapeHtml(resp.nome):'—'}</td>
+      <td style="padding:9px 12px;font-family:var(--font-mono);">${t.prazo?fmtDate(t.prazo):'—'}</td>
+      <td style="padding:9px 12px;"><span class="badge ${info.cls}">${info.label}</span></td>
+    `;
+    tr.onclick = ()=>openTaskModal(t.id);
+    tbody.appendChild(tr);
+  });
+  c.appendChild(wrap);
+}
+
+function renderTarefasBoard(c, list){
   const board = document.createElement('div');
   board.className = 'board';
   STATUS_COLS.forEach(col=>{
@@ -729,7 +808,7 @@ function renderCard(t){
       <span class="tag type">${escapeHtml(t.tipo||'Outro')}</span>
       ${inst?`<span class="tag">${escapeHtml(inst.nome)}${proj?` · ${escapeHtml(proj.sigla||proj.nome)}`:''}</span>`:''}
     </div>
-    <h4>${escapeHtml(t.titulo)}</h4>
+    <h4>${t.recorrencia?'🔁 ':''}${escapeHtml(t.titulo)}</h4>
     <div class="meta">
       <div class="who" title="Solicitado por ${solic?escapeHtml(solic.nome):'—'} · Responsável ${resp?escapeHtml(resp.nome):'—'}">
         <span class="avatar">${resp?initials(resp.nome):'?'}</span>
@@ -1284,9 +1363,11 @@ function openTaskModal(taskId){
   const t = isNew ? {
     id: uid(), titulo:'', tipo: state.tiposTarefa[0],
     instituicaoId: filters.inst || (state.instituicoes[0]?state.instituicoes[0].id:''),
-    projetoId:'', solicitanteId:'', responsavelId:'', prazo:'', status:'afazer', descricao:''
+    projetoId:'', solicitanteId:'', responsavelId:'', prazo:'', status:'afazer', descricao:'', recorrencia:null
   } : state.tarefas.find(x=>x.id===taskId);
+  const originalStatus = isNew ? null : t.status;
 
+  const rec = t.recorrencia || null;
   const overlay = document.createElement('div');
   overlay.className='overlay';
   overlay.innerHTML = `
@@ -1328,6 +1409,29 @@ function openTaskModal(taskId){
         <div class="field"><label>Detalhes / orientações</label>
           <textarea id="f_desc" placeholder="Ex.: função, carga horária, valores, período de contratação...">${escapeHtml(t.descricao||'')}</textarea></div>
 
+        <div class="field">
+          <label style="display:flex;align-items:center;gap:7px;text-transform:none;font-size:13px;color:var(--ink);">
+            <input type="checkbox" id="f_recorrente" ${rec?'checked':''} style="width:auto;"> Tarefa recorrente
+          </label>
+        </div>
+        <div class="field-row" id="f_rec_wrap" style="display:${rec?'grid':'none'};">
+          <div class="field"><label>Repetir</label>
+            <select id="f_rec_tipo">
+              <option value="dias" ${rec&&rec.tipo==='dias'?'selected':''}>A cada X dias</option>
+              <option value="semanal" ${rec&&rec.tipo==='semanal'?'selected':''}>Semanalmente</option>
+              <option value="quinzenal" ${rec&&rec.tipo==='quinzenal'?'selected':''}>Quinzenalmente</option>
+              <option value="mensal" ${rec&&rec.tipo==='mensal'?'selected':''}>Mensalmente</option>
+              <option value="bimestral" ${rec&&rec.tipo==='bimestral'?'selected':''}>Bimestralmente</option>
+              <option value="semestral" ${rec&&rec.tipo==='semestral'?'selected':''}>Semestralmente</option>
+            </select>
+          </div>
+          <div class="field" id="f_rec_dias_wrap" style="display:${rec&&rec.tipo==='dias'?'block':'none'};">
+            <label>A cada quantos dias</label>
+            <input type="number" min="1" id="f_rec_dias" value="${rec&&rec.valor?rec.valor:7}">
+          </div>
+        </div>
+        <div class="hint" id="f_rec_hint" style="display:${rec?'block':'none'};margin-top:-6px;">Ao marcar esta tarefa como Concluído, uma próxima ocorrência é criada automaticamente com o novo prazo.</div>
+
         <div class="field"><label>Status</label>
           <div class="status-picker" id="f_status">
             ${STATUS_COLS.map(sc=>`<button type="button" data-s="${sc.id}" class="${t.status===sc.id?'active':''}">${sc.label}</button>`).join('')}
@@ -1355,6 +1459,19 @@ function openTaskModal(taskId){
   refreshProj();
   instSel.onchange = ()=>{ t.projetoId=''; refreshProj(); };
 
+  const recCheckbox = overlay.querySelector('#f_recorrente');
+  const recWrap = overlay.querySelector('#f_rec_wrap');
+  const recHint = overlay.querySelector('#f_rec_hint');
+  const recTipoSel = overlay.querySelector('#f_rec_tipo');
+  const recDiasWrap = overlay.querySelector('#f_rec_dias_wrap');
+  function toggleRecUI(){
+    const on = recCheckbox.checked;
+    recWrap.style.display = on ? 'grid' : 'none';
+    recHint.style.display = on ? 'block' : 'none';
+  }
+  recCheckbox.onchange = toggleRecUI;
+  recTipoSel.onchange = ()=>{ recDiasWrap.style.display = recTipoSel.value==='dias' ? 'block' : 'none'; };
+
   let curStatus = t.status;
   overlay.querySelectorAll('#f_status button').forEach(b=>b.onclick=()=>{
     curStatus = b.dataset.s;
@@ -1378,22 +1495,65 @@ function openTaskModal(taskId){
   overlay.querySelector('#f_save').onclick = ()=>{
     const titulo = overlay.querySelector('#f_titulo').value.trim();
     if(!titulo){ toast('Dê um título para a tarefa.'); return; }
+    const prazo = overlay.querySelector('#f_prazo').value;
+    const querRecorrente = recCheckbox.checked;
+    if(querRecorrente && !prazo){ toast('Tarefas recorrentes precisam de um prazo inicial.'); return; }
+
     t.titulo = titulo;
     t.tipo = overlay.querySelector('#f_tipo').value;
-    t.prazo = overlay.querySelector('#f_prazo').value;
+    t.prazo = prazo;
     t.instituicaoId = instSel.value;
     t.projetoId = projSel.value;
     t.solicitanteId = overlay.querySelector('#f_solic').value;
     t.responsavelId = overlay.querySelector('#f_resp').value;
     t.descricao = overlay.querySelector('#f_desc').value;
     t.status = curStatus;
+
+    if(querRecorrente){
+      const tipo = recTipoSel.value;
+      t.recorrencia = tipo==='dias' ? {tipo, valor: parseInt(overlay.querySelector('#f_rec_dias').value)||1} : {tipo};
+    } else {
+      t.recorrencia = null;
+    }
+
     if(isNew) state.tarefas.push(t);
+
+    const virouConcluida = curStatus==='concluido' && originalStatus!=='concluido';
+    if(virouConcluida && t.recorrencia && t.prazo){
+      const proximoPrazo = nextDateForRecurrence(t.prazo, t.recorrencia);
+      if(proximoPrazo){
+        state.tarefas.push({
+          id: uid(), titulo: t.titulo, tipo: t.tipo,
+          instituicaoId: t.instituicaoId, projetoId: t.projetoId,
+          solicitanteId: t.solicitanteId, responsavelId: t.responsavelId,
+          prazo: proximoPrazo, status: 'afazer', descricao: t.descricao,
+          recorrencia: t.recorrencia
+        });
+      }
+    }
+
     scheduleSave(); close(); render();
     toast(isNew?'Tarefa criada.':'Tarefa atualizada.');
   };
 }
 
-/* ================== MODAL: CERTIDÃO ================== */
+function nextDateForRecurrence(dateStr, rec){
+  if(!dateStr || !rec) return null;
+  const d = new Date(dateStr+'T00:00:00');
+  if(isNaN(d)) return null;
+  switch(rec.tipo){
+    case 'dias': d.setDate(d.getDate() + (parseInt(rec.valor)||1)); break;
+    case 'semanal': d.setDate(d.getDate()+7); break;
+    case 'quinzenal': d.setDate(d.getDate()+15); break;
+    case 'mensal': d.setMonth(d.getMonth()+1); break;
+    case 'bimestral': d.setMonth(d.getMonth()+2); break;
+    case 'semestral': d.setMonth(d.getMonth()+6); break;
+    default: return null;
+  }
+  return `${d.getFullYear()}-${pad2(d.getMonth()+1)}-${pad2(d.getDate())}`;
+}
+
+
 function openCertModal(instId, tipoId){
   let cert = state.certidoes.find(x=>x.instituicaoId===instId && x.tipoId===tipoId);
   const isNew = !cert;
