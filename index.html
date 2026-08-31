@@ -361,20 +361,21 @@ function defaultState(){
     'Certidão Divida Ativa da União','Certidão Dívida Ativa Estadual','Certidão Débitos Municipais',
     'Certidão FGTS','Certidão Trabalhista (CNDT)','Certidão CEPIM',
     'Certidão do TCE','COMTIBA','CMAS','Ata Eleição'
-  ].map(nome=>({id:uid(), nome}));
+  ].map(nome=>({id:uid(), nome, notificarApenasNoDia:false}));
   const tiposTarefa = ['Contrato','Cotação','Pagamento','Documentação','Certidão','Prestação de Contas','Outro'];
   return {
     membros: [
-      {id:'af', nome:'Ana Flávia'},
-      {id:'sz', nome:'Suzana'},
-      {id:'ac', nome:'Ana Cristina'}
+      {id:'af', nome:'Ana Flávia', whatsapp:'', callmebotApiKey:''},
+      {id:'sz', nome:'Suzana', whatsapp:'', callmebotApiKey:''},
+      {id:'ac', nome:'Ana Cristina', whatsapp:'', callmebotApiKey:''}
     ],
     instituicoes,
     certidaoTipos,
     tiposTarefa,
     certidoes: [],
     links: [],
-    tarefas: []
+    tarefas: [],
+    notifCertidaoMembroId: null
   };
 }
 
@@ -415,6 +416,20 @@ async function apiSaveData(dataObj){
 
 async function apiChangePassword(senhaAtual, novaSenha){
   return apiCall('changePassword', {token: session.token, senhaAtual, novaSenha}, 'POST');
+}
+
+// Dispara uma notificação de WhatsApp em tempo real via o Apps Script (usando CallMeBot).
+// tipo: 'tarefa_nova' | 'duvida_tarefa' | 'duvida_respondida' | 'certidao_vencendo'
+// membro: objeto do state.membros (precisa ter .whatsapp e .callmebotApiKey preenchidos)
+// Falhas de envio são silenciosas (não travam o fluxo do usuário) — apenas registradas no console.
+async function apiNotify(tipo, membro, param1, param2){
+  if(!session || !membro || !membro.whatsapp || !membro.callmebotApiKey) return;
+  try{
+    const res = await apiCall('notify', {tipo, telefone: membro.whatsapp, apikey: membro.callmebotApiKey, param1: param1||'', param2: param2||''}, 'POST');
+    if(!res.ok) console.warn('Notificação não enviada:', res.error);
+  }catch(e){
+    console.warn('Erro ao notificar WhatsApp:', e);
+  }
 }
 
 /* ================== SESSÃO / LOGIN ================== */
@@ -542,7 +557,24 @@ async function loadState(){
     state = res.data ? Object.assign(defaultState(), res.data) : defaultState();
     if(!state.membros || !state.membros.length) state.membros = defaultState().membros;
     if(!state.tiposTarefa || !state.tiposTarefa.length) state.tiposTarefa = defaultState().tiposTarefa;
-    state.tarefas.forEach(t=>{ if(typeof t.lida === 'undefined') t.lida = false; if(typeof t.lidaEm === 'undefined') t.lidaEm = null; });
+    state.tarefas.forEach(t=>{
+      if(typeof t.pendenteLeituraPara === 'undefined'){
+        if(t.lida === true){
+          t.pendenteLeituraPara = null;
+          t.ultimaLeituraPor = t.responsavelId || null;
+          t.ultimaLeituraEm = t.lidaEm || null;
+        } else {
+          t.pendenteLeituraPara = t.responsavelId || null;
+          t.ultimaLeituraPor = null;
+          t.ultimaLeituraEm = null;
+        }
+        delete t.lida; delete t.lidaEm;
+      }
+      if(!Array.isArray(t.chat)) t.chat = [];
+    });
+    state.membros.forEach(m=>{ if(typeof m.whatsapp === 'undefined') m.whatsapp = ''; if(typeof m.callmebotApiKey === 'undefined') m.callmebotApiKey = ''; });
+    state.certidaoTipos.forEach(ct=>{ if(typeof ct.notificarApenasNoDia === 'undefined') ct.notificarApenasNoDia = false; });
+    if(typeof state.notifCertidaoMembroId === 'undefined') state.notifCertidaoMembroId = null;
     if(!res.data) await persist(true);
     setSaveState('ok');
   }catch(e){
@@ -817,7 +849,7 @@ function renderTarefasLista(c, list){
     if(checked) tr.style.background='var(--gold-soft)';
     tr.innerHTML = `
       <td style="padding:9px 8px;text-align:center;"><input type="checkbox" class="rowCheck" data-id="${t.id}" ${checked?'checked':''}></td>
-      <td style="padding:9px 12px;font-weight:${t.lida?400:700};cursor:pointer;">${!t.lida?'<span class="unread-dot"></span>':''}${t.recorrencia?'🔁 ':''}${escapeHtml(t.titulo)}</td>
+      <td style="padding:9px 12px;font-weight:${t.pendenteLeituraPara?700:400};cursor:pointer;">${t.pendenteLeituraPara?'<span class="unread-dot"></span>':''}${t.recorrencia?'🔁 ':''}${escapeHtml(t.titulo)}</td>
       <td style="padding:9px 12px;cursor:pointer;"><span class="tag type">${escapeHtml(t.tipo||'Outro')}</span></td>
       <td style="padding:9px 12px;cursor:pointer;">${inst?escapeHtml(inst.nome):'—'}</td>
       <td style="padding:9px 12px;cursor:pointer;">${proj?escapeHtml(proj.sigla||proj.nome):'—'}</td>
@@ -825,7 +857,7 @@ function renderTarefasLista(c, list){
       <td style="padding:9px 12px;cursor:pointer;">${resp?escapeHtml(resp.nome):'—'}</td>
       <td style="padding:9px 12px;font-family:var(--font-mono);cursor:pointer;">${t.prazo?fmtDate(t.prazo):'—'}</td>
       <td style="padding:9px 12px;cursor:pointer;"><span class="badge ${info.cls}">${info.label}</span></td>
-      <td style="padding:9px 12px;font-family:var(--font-mono);font-size:12px;color:var(--muted);cursor:pointer;">${t.lidaEm?fmtDateTime(t.lidaEm):'—'}</td>
+      <td style="padding:9px 12px;font-family:var(--font-mono);font-size:12px;color:var(--muted);cursor:pointer;">${t.ultimaLeituraEm?fmtDateTime(t.ultimaLeituraEm):'—'}</td>
     `;
     tr.querySelectorAll('td:not(:first-child)').forEach(td=> td.onclick = ()=>openTaskModal(t.id));
     tr.querySelector('.rowCheck').onclick = (e)=>{
@@ -871,7 +903,7 @@ function renderCard(t){
       <span class="tag type">${escapeHtml(t.tipo||'Outro')}</span>
       ${inst?`<span class="tag">${escapeHtml(inst.nome)}${proj?` · ${escapeHtml(proj.sigla||proj.nome)}`:''}</span>`:''}
     </div>
-    <h4 style="font-weight:${t.lida?500:800};">${!t.lida?'<span class="unread-dot"></span>':''}${t.recorrencia?'🔁 ':''}${escapeHtml(t.titulo)}</h4>
+    <h4 style="font-weight:${t.pendenteLeituraPara?800:500};">${t.pendenteLeituraPara?'<span class="unread-dot"></span>':''}${t.recorrencia?'🔁 ':''}${escapeHtml(t.titulo)}</h4>
     <div class="meta">
       <div class="who" title="Solicitado por ${solic?escapeHtml(solic.nome):'—'} · Responsável ${resp?escapeHtml(resp.nome):'—'}">
         <span class="avatar">${resp?initials(resp.nome):'?'}</span>
@@ -1320,12 +1352,12 @@ function renderConfig(c){
 
   // Tipos de certidão
   const s2 = document.createElement('div'); s2.className='cfg-section';
-  s2.innerHTML = `<h3>Tipos de certidão</h3><div class="hint">A lista usada nas 5 instituições.</div>`;
+  s2.innerHTML = `<h3>Tipos de certidão</h3><div class="hint">A lista usada nas 5 instituições. O aviso de WhatsApp é enviado uma única vez, no dia do vencimento.</div>`;
   const list2 = document.createElement('div'); list2.className='cfg-list';
   state.certidaoTipos.forEach(tipo=>{
     const row = document.createElement('div'); row.className='cfg-row';
     row.innerHTML = `
-      <input value="${escapeAttr(tipo.nome)}" data-tipo="${tipo.id}" class="tipoNome">
+      <input value="${escapeAttr(tipo.nome)}" data-tipo="${tipo.id}" class="tipoNome" style="flex:1;">
       <button class="icon-btn delTipo" data-tipo="${tipo.id}">✕</button>
     `;
     list2.appendChild(row);
@@ -1360,13 +1392,15 @@ function renderConfig(c){
 
   // Membros
   const s3 = document.createElement('div'); s3.className='cfg-section';
-  s3.innerHTML = `<h3>Equipe</h3><div class="hint">Quem solicita e quem executa as tarefas.</div>`;
+  s3.innerHTML = `<h3>Equipe</h3><div class="hint">Quem solicita e quem executa as tarefas. WhatsApp + Chave CallMeBot são usados para os lembretes automáticos (cada pessoa ativa a própria chave mandando "I allow callmebot to send me messages" para +34 644 84 71 04 no WhatsApp dela).</div>`;
   const list3 = document.createElement('div'); list3.className='cfg-list';
   state.membros.forEach(m=>{
-    const row = document.createElement('div'); row.className='cfg-row';
+    const row = document.createElement('div'); row.className='cfg-row'; row.style.flexWrap='wrap';
     row.innerHTML = `
       <span class="avatar">${initials(m.nome)}</span>
-      <input value="${escapeAttr(m.nome)}" data-membro="${m.id}" class="membroNome">
+      <input value="${escapeAttr(m.nome)}" data-membro="${m.id}" class="membroNome" style="flex:1;min-width:110px;">
+      <input value="${escapeAttr(m.whatsapp||'')}" data-membro="${m.id}" class="membroWhatsapp" placeholder="WhatsApp: 5541999999999" style="flex:1;min-width:150px;">
+      <input value="${escapeAttr(m.callmebotApiKey||'')}" data-membro="${m.id}" class="membroApiKey" placeholder="Chave CallMeBot" style="flex:1;min-width:120px;">
       <button class="icon-btn delMembro" data-membro="${m.id}">✕</button>
     `;
     list3.appendChild(row);
@@ -1375,9 +1409,20 @@ function renderConfig(c){
   const addMembroBtn = document.createElement('button');
   addMembroBtn.className='btn ghost small'; addMembroBtn.style.marginTop='10px';
   addMembroBtn.textContent='+ Adicionar pessoa';
-  addMembroBtn.onclick = ()=>{ state.membros.push({id:uid(), nome:'Novo membro'}); scheduleSave(); render(); };
+  addMembroBtn.onclick = ()=>{ state.membros.push({id:uid(), nome:'Novo membro', whatsapp:'', callmebotApiKey:''}); scheduleSave(); render(); };
   s3.appendChild(addMembroBtn);
   wrap.appendChild(s3);
+
+  // Notificações
+  const s4 = document.createElement('div'); s4.className='cfg-section';
+  s4.innerHTML = `<h3>Notificações de certidões</h3><div class="hint">Quem recebe, por WhatsApp, os avisos de certidões vencidas.</div>`;
+  const notifSelect = document.createElement('select');
+  notifSelect.innerHTML = `<option value="">— Ninguém selecionado —</option>` +
+    state.membros.map(m=>`<option value="${m.id}" ${state.notifCertidaoMembroId===m.id?'selected':''}>${escapeHtml(m.nome)}</option>`).join('');
+  notifSelect.style.maxWidth='280px';
+  notifSelect.onchange = e=>{ state.notifCertidaoMembroId = e.target.value || null; scheduleSave(); };
+  s4.appendChild(notifSelect);
+  wrap.appendChild(s4);
 
   c.appendChild(wrap);
 
@@ -1388,6 +1433,8 @@ function renderConfig(c){
   wrap.querySelectorAll('.tipoNome').forEach(inp=> inp.oninput = e=>{ state.certidaoTipos.find(t=>t.id===e.target.dataset.tipo).nome = e.target.value; scheduleSave(); });
   wrap.querySelectorAll('.tipoTarefaNome').forEach(inp=> inp.oninput = e=>{ state.tiposTarefa[parseInt(e.target.dataset.idx)] = e.target.value; scheduleSave(); });
   wrap.querySelectorAll('.membroNome').forEach(inp=> inp.oninput = e=>{ membroById(e.target.dataset.membro).nome = e.target.value; scheduleSave(); render(); });
+  wrap.querySelectorAll('.membroWhatsapp').forEach(inp=> inp.oninput = e=>{ membroById(e.target.dataset.membro).whatsapp = e.target.value; scheduleSave(); });
+  wrap.querySelectorAll('.membroApiKey').forEach(inp=> inp.oninput = e=>{ membroById(e.target.dataset.membro).callmebotApiKey = e.target.value; scheduleSave(); });
 
   wrap.querySelectorAll('.addProj').forEach(btn=> btn.onclick = e=>{
     instById(e.target.dataset.inst).projetos.push({id:uid(), nome:'Projeto', sigla:'SIGLA'});
@@ -1426,16 +1473,18 @@ function openTaskModal(taskId){
   const t = isNew ? {
     id: uid(), titulo:'', tipo: state.tiposTarefa[0],
     instituicaoId: filters.inst || (state.instituicoes[0]?state.instituicoes[0].id:''),
-    projetoId:'', solicitanteId:'', responsavelId:'', prazo:'', status:'afazer', descricao:'', recorrencia:null, lida:false
+    projetoId:'', solicitanteId:'', responsavelId:'', prazo:'', status:'afazer', descricao:'', recorrencia:null,
+    pendenteLeituraPara:null, ultimaLeituraPor:null, ultimaLeituraEm:null, chat:[]
   } : state.tarefas.find(x=>x.id===taskId);
   const originalStatus = isNew ? null : t.status;
   const originalResponsavelId = isNew ? null : t.responsavelId;
   const me = currentMembro();
 
-  // marcar como lida assim que a pessoa responsável abre a tarefa
-  if(!isNew && me && t.responsavelId===me.id && !t.lida){
-    t.lida = true;
-    t.lidaEm = new Date().toISOString();
+  // marcar como lida assim que a pessoa "aguardada" (responsável OU solicitante, dependendo do momento) abre a tarefa
+  if(!isNew && me && t.pendenteLeituraPara===me.id){
+    t.pendenteLeituraPara = null;
+    t.ultimaLeituraPor = me.id;
+    t.ultimaLeituraEm = new Date().toISOString();
     scheduleSave();
     render(); // atualiza o negrito na lista/quadro por trás do modal
   }
@@ -1511,6 +1560,18 @@ function openTaskModal(taskId){
           </div>
         </div>
 
+        ${!isNew?`
+        <div class="hint" id="f_leitura_info" style="margin-top:-6px;"></div>
+        <div class="field" id="f_chat_wrap">
+          <label>Chat da tarefa</label>
+          <div id="f_chat_list" style="max-height:200px;overflow-y:auto;border:1px solid var(--line);border-radius:8px;padding:8px 10px;background:var(--white);display:flex;flex-direction:column;gap:8px;"></div>
+          <div style="display:flex;gap:8px;margin-top:8px;">
+            <input id="f_chat_input" placeholder="Escreva uma dúvida ou resposta..." style="flex:1;">
+            <button class="btn small" id="f_chat_send">Enviar</button>
+          </div>
+        </div>
+        `:''}
+
         <div class="modal-actions">
           <div>${!isNew?`<button class="btn danger small" id="f_del">Excluir</button>`:''}</div>
           <div style="display:flex;gap:8px;">
@@ -1549,6 +1610,63 @@ function openTaskModal(taskId){
   recCheckbox.onchange = toggleRecUI;
   recTipoSel.onchange = syncRecDiasVisibility;
   syncRecDiasVisibility(); // garante que o campo de dias já apareça certo ao abrir (ex.: editando tarefa existente)
+
+  // ---- Chat da tarefa (só para tarefas já existentes) ----
+  if(!isNew){
+    const leituraInfo = overlay.querySelector('#f_leitura_info');
+    function renderLeituraInfo(){
+      if(t.ultimaLeituraPor && t.ultimaLeituraEm){
+        const quem = membroById(t.ultimaLeituraPor);
+        leituraInfo.textContent = `Última leitura: ${quem?quem.nome:'—'} em ${fmtDateTime(t.ultimaLeituraEm)}`;
+      } else {
+        leituraInfo.textContent = 'Ainda não foi lida por ninguém.';
+      }
+    }
+    renderLeituraInfo();
+
+    const chatList = overlay.querySelector('#f_chat_list');
+    function renderChat(){
+      if(!t.chat || t.chat.length===0){
+        chatList.innerHTML = `<div class="hint" style="margin:0;">Nenhuma mensagem ainda.</div>`;
+        return;
+      }
+      chatList.innerHTML = t.chat.map(msg=>`
+        <div style="background:var(--paper-dim);border-radius:8px;padding:7px 10px;">
+          <div style="font-size:11.5px;font-weight:700;color:var(--ink);">${escapeHtml(msg.autorNome||'—')} <span style="font-weight:400;color:var(--muted);">· ${fmtDateTime(msg.criadoEm)}</span></div>
+          <div style="font-size:13px;margin-top:2px;">${escapeHtml(msg.texto)}</div>
+        </div>
+      `).join('');
+      chatList.scrollTop = chatList.scrollHeight;
+    }
+    renderChat();
+
+    overlay.querySelector('#f_chat_send').onclick = ()=>{
+      const input = overlay.querySelector('#f_chat_input');
+      const texto = input.value.trim();
+      if(!texto) return;
+      const autorId = me ? me.id : null;
+      const autorNome = me ? me.nome : (session?session.nome:'—');
+      t.chat.push({ id: uid(), autorId, autorNome, texto, criadoEm: new Date().toISOString() });
+      input.value = '';
+
+      // se quem escreveu é o responsável levantando dúvida -> avisa o solicitante
+      if(autorId && autorId===t.responsavelId && t.solicitanteId){
+        t.pendenteLeituraPara = t.solicitanteId;
+        const solic = membroById(t.solicitanteId);
+        if(solic && solic.whatsapp) apiNotify('duvida_tarefa', solic, t.titulo);
+      }
+      // se quem escreveu é o solicitante respondendo -> avisa o responsável
+      else if(autorId && autorId===t.solicitanteId && t.responsavelId){
+        t.pendenteLeituraPara = t.responsavelId;
+        const resp = membroById(t.responsavelId);
+        if(resp && resp.whatsapp) apiNotify('duvida_respondida', resp, t.titulo);
+      }
+
+      renderChat();
+      scheduleSave();
+      render(); // atualiza negrito na lista/quadro por trás do modal
+    };
+  }
 
   let curStatus = t.status;
   overlay.querySelectorAll('#f_status button').forEach(b=>b.onclick=()=>{
@@ -1589,8 +1707,7 @@ function openTaskModal(taskId){
 
     if(isNew || t.responsavelId !== originalResponsavelId){
       // tarefa nova, ou responsável mudou: sempre nasce como "não lida" — só vira lida quando alguém efetivamente abre a tarefa
-      t.lida = false;
-      t.lidaEm = null;
+      t.pendenteLeituraPara = t.responsavelId || null;
     }
 
     if(querRecorrente){
@@ -1604,7 +1721,12 @@ function openTaskModal(taskId){
 
     maybeGenerateNextRecurrence(t, originalStatus, curStatus);
 
-    if(isNew){ filters = {inst:'',proj:'',resp:'',status:'',tipo:''}; }
+    if(isNew){
+      filters = {inst:'',proj:'',resp:'',status:'',tipo:''};
+      const resp = membroById(t.responsavelId);
+      if(resp && resp.whatsapp) apiNotify('tarefa_nova', resp);
+    }
+
     scheduleSave(); close(); render();
     toast(isNew?'Tarefa criada.':'Tarefa atualizada.');
   };
@@ -1615,13 +1737,17 @@ function maybeGenerateNextRecurrence(t, prevStatus, newStatus){
   if(virouConcluida && t.recorrencia && t.prazo){
     const proximoPrazo = nextDateForRecurrence(t.prazo, t.recorrencia);
     if(proximoPrazo){
-      state.tarefas.push({
+      const novaTarefa = {
         id: uid(), titulo: t.titulo, tipo: t.tipo,
         instituicaoId: t.instituicaoId, projetoId: t.projetoId,
         solicitanteId: t.solicitanteId, responsavelId: t.responsavelId,
         prazo: proximoPrazo, status: 'afazer', descricao: t.descricao,
-        recorrencia: t.recorrencia, lida:false, lidaEm:null
-      });
+        recorrencia: t.recorrencia,
+        pendenteLeituraPara: t.responsavelId || null, ultimaLeituraPor: null, ultimaLeituraEm: null, chat: []
+      };
+      state.tarefas.push(novaTarefa);
+      const resp = membroById(novaTarefa.responsavelId);
+      if(resp && resp.whatsapp) apiNotify('tarefa_nova', resp);
     }
   }
 }
