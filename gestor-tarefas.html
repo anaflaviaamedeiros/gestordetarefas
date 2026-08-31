@@ -1,0 +1,1303 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Gestor de Tarefas — Prestação de Contas</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --ink:#151a23;
+    --ink-2:#1c222e;
+    --paper:#f6f3ec;
+    --paper-dim:#eae5d8;
+    --line:#d9d2bf;
+    --line-soft:#e5e0d2;
+    --gold:#b5852c;
+    --gold-soft:#e8c98a;
+    --teal:#2f6f6a;
+    --rust:#a8452f;
+    --rust-soft:#f3d9d1;
+    --ok:#3c7a4c;
+    --ok-soft:#dcebdf;
+    --warn:#b5852c;
+    --warn-soft:#f3e6c9;
+    --bad:#a8452f;
+    --bad-soft:#f3d9d1;
+    --muted:#6b6455;
+    --white:#fffdf8;
+    --shadow: 0 1px 2px rgba(21,26,35,.06), 0 8px 24px -12px rgba(21,26,35,.18);
+    --radius: 10px;
+    --font-display: 'Fraunces', Georgia, serif;
+    --font-body: 'IBM Plex Sans', -apple-system, sans-serif;
+    --font-mono: 'IBM Plex Mono', ui-monospace, monospace;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    background:var(--paper);
+    color:var(--ink);
+    font-family:var(--font-body);
+    font-size:15px;
+    line-height:1.45;
+    -webkit-font-smoothing:antialiased;
+  }
+  ::selection{background:var(--gold-soft);}
+  a{color:inherit;}
+  button{font-family:inherit;cursor:pointer;}
+  input,select,textarea{font-family:inherit;font-size:14px;}
+
+  #app{max-width:1180px;margin:0 auto;padding:0 20px 64px;}
+
+  /* ---------- Header ---------- */
+  header.top{
+    padding:28px 0 18px;
+    display:flex;align-items:flex-end;justify-content:space-between;
+    gap:16px;flex-wrap:wrap;
+    border-bottom:2px solid var(--ink);
+    margin-bottom:22px;
+  }
+  header.top .brand-mark{
+    width:38px;height:38px;border-radius:8px;background:var(--ink);
+    display:flex;align-items:center;justify-content:center;
+    color:var(--paper);font-family:var(--font-display);font-weight:700;font-size:18px;
+    flex:none;
+  }
+  header.top h1{
+    font-family:var(--font-display);
+    font-weight:600;
+    font-size:26px;
+    margin:0;
+    letter-spacing:-.01em;
+    display:flex;align-items:center;gap:12px;
+  }
+  header.top .sub{
+    font-size:12.5px;color:var(--muted);
+    margin-top:2px;
+    font-family:var(--font-mono);
+    text-transform:uppercase;letter-spacing:.06em;
+  }
+  header.top .head-left{display:flex;gap:12px;align-items:center;}
+  header.top .save-state{
+    font-family:var(--font-mono);font-size:11.5px;color:var(--muted);
+    display:flex;align-items:center;gap:6px;
+  }
+  .dot{width:6px;height:6px;border-radius:50%;background:var(--ok);flex:none;}
+  .dot.saving{background:var(--gold);animation:pulse 1s infinite;}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
+
+  /* ---------- Tabs ---------- */
+  nav.tabs{
+    display:flex;gap:4px;margin-bottom:22px;
+    border-bottom:1px solid var(--line);
+  }
+  nav.tabs button{
+    background:none;border:none;
+    padding:10px 4px;margin-right:22px;
+    font-size:14.5px;font-weight:600;color:var(--muted);
+    border-bottom:2px solid transparent;
+    transition:color .15s;
+    position:relative;top:1px;
+    font-family:var(--font-body);
+  }
+  nav.tabs button .count{
+    font-family:var(--font-mono);font-size:11px;font-weight:500;
+    background:var(--paper-dim);color:var(--muted);
+    padding:1px 6px;border-radius:20px;margin-left:6px;
+  }
+  nav.tabs button.active{color:var(--ink);border-bottom-color:var(--gold);}
+  nav.tabs button.active .count{background:var(--ink);color:var(--paper);}
+  nav.tabs button:hover{color:var(--ink);}
+
+  /* ---------- Summary banner ---------- */
+  .banner{
+    display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));
+    gap:1px;background:var(--line);
+    border:1px solid var(--line);border-radius:var(--radius);
+    overflow:hidden;margin-bottom:22px;
+  }
+  .banner .cell{background:var(--white);padding:14px 16px;}
+  .banner .cell .num{font-family:var(--font-display);font-size:26px;font-weight:600;line-height:1;}
+  .banner .cell .lbl{font-size:12px;color:var(--muted);margin-top:4px;text-transform:uppercase;letter-spacing:.04em;}
+  .banner .cell.bad .num{color:var(--bad);}
+  .banner .cell.warn .num{color:var(--warn);}
+  .banner .cell.ok .num{color:var(--ok);}
+
+  /* ---------- Filters ---------- */
+  .filters{
+    display:flex;gap:10px;flex-wrap:wrap;align-items:center;
+    margin-bottom:18px;
+  }
+  .filters select, .filters input[type=text]{
+    padding:8px 10px;border:1px solid var(--line);border-radius:8px;
+    background:var(--white);color:var(--ink);font-size:13.5px;
+    min-width:150px;
+  }
+  .filters .spacer{flex:1;}
+  .btn{
+    padding:9px 16px;border-radius:8px;border:1px solid var(--ink);
+    background:var(--ink);color:var(--paper);font-weight:600;font-size:13.5px;
+    display:inline-flex;align-items:center;gap:6px;transition:transform .1s, box-shadow .1s;
+  }
+  .btn:hover{box-shadow:var(--shadow);transform:translateY(-1px);}
+  .btn.ghost{background:transparent;color:var(--ink);border-color:var(--line);font-weight:500;}
+  .btn.ghost:hover{border-color:var(--ink);}
+  .btn.small{padding:5px 10px;font-size:12.5px;}
+  .btn.danger{background:var(--rust);border-color:var(--rust);}
+  .chip-clear{font-size:12.5px;color:var(--muted);text-decoration:underline;background:none;border:none;padding:4px 2px;}
+
+  /* ---------- Kanban ---------- */
+  .board{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;align-items:start;}
+  .col{background:var(--paper-dim);border-radius:var(--radius);padding:10px;min-height:80px;}
+  .col-head{display:flex;justify-content:space-between;align-items:center;padding:4px 6px 10px;}
+  .col-head h3{margin:0;font-size:13px;text-transform:uppercase;letter-spacing:.05em;font-weight:700;color:var(--muted);}
+  .col-head .n{font-family:var(--font-mono);font-size:12px;color:var(--muted);}
+  .card{
+    background:var(--white);border:1px solid var(--line-soft);border-radius:9px;
+    padding:12px 13px;margin-bottom:9px;cursor:pointer;
+    transition:box-shadow .12s, transform .12s;
+    border-left:4px solid var(--inst-color, var(--ink));
+  }
+  .card:hover{box-shadow:var(--shadow);transform:translateY(-1px);}
+  .card .tags{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:7px;}
+  .tag{
+    font-family:var(--font-mono);font-size:10.5px;text-transform:uppercase;letter-spacing:.03em;
+    padding:2px 7px;border-radius:20px;background:var(--paper-dim);color:var(--ink);font-weight:600;
+  }
+  .tag.type{background:var(--ink);color:var(--paper);}
+  .card h4{margin:0 0 6px;font-size:14px;font-weight:600;line-height:1.3;}
+  .card .meta{display:flex;justify-content:space-between;align-items:center;margin-top:9px;font-size:12px;color:var(--muted);}
+  .card .who{display:flex;align-items:center;gap:5px;}
+  .avatar{
+    width:20px;height:20px;border-radius:50%;background:var(--ink);color:var(--paper);
+    display:flex;align-items:center;justify-content:center;font-size:9.5px;font-weight:700;flex:none;
+    font-family:var(--font-mono);
+  }
+  .due{font-family:var(--font-mono);font-weight:600;}
+  .due.overdue{color:var(--bad);}
+  .due.soon{color:var(--warn);}
+  .empty-col{padding:20px 8px;text-align:center;color:var(--muted);font-size:12.5px;}
+
+  /* ---------- Certidões ---------- */
+  .inst-block{margin-bottom:20px;border:1px solid var(--line);border-radius:var(--radius);overflow:hidden;background:var(--white);}
+  .inst-block .inst-head{
+    display:flex;align-items:center;gap:10px;padding:12px 16px;
+    background:var(--paper-dim);border-bottom:1px solid var(--line);
+  }
+  .inst-swatch{width:10px;height:10px;border-radius:3px;flex:none;}
+  .inst-head h3{margin:0;font-size:15px;font-family:var(--font-display);font-weight:600;}
+  .inst-head .stats{margin-left:auto;display:flex;gap:8px;font-family:var(--font-mono);font-size:11px;}
+  .cert-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:1px;background:var(--line-soft);}
+  .cert-cell{background:var(--white);padding:12px 16px;cursor:pointer;transition:background .12s;}
+  .cert-cell:hover{background:var(--paper-dim);}
+  .cert-cell .cn{font-size:13px;font-weight:600;margin-bottom:5px;}
+  .cert-cell .cd{font-size:11.5px;color:var(--muted);font-family:var(--font-mono);display:flex;justify-content:space-between;}
+  .badge{
+    display:inline-flex;align-items:center;gap:5px;padding:2px 8px;border-radius:20px;
+    font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.03em;margin-top:6px;
+    font-family:var(--font-mono);
+  }
+  .badge.ok{background:var(--ok-soft);color:var(--ok);}
+  .badge.warn{background:var(--warn-soft);color:var(--warn);}
+  .badge.bad{background:var(--bad-soft);color:var(--bad);}
+  .badge.none{background:var(--paper-dim);color:var(--muted);}
+
+  /* ---------- Config ---------- */
+  .cfg-section{margin-bottom:28px;}
+  .cfg-section h3{font-family:var(--font-display);font-size:17px;margin:0 0 4px;}
+  .cfg-section .hint{font-size:12.5px;color:var(--muted);margin-bottom:12px;}
+  .cfg-list{display:flex;flex-direction:column;gap:8px;}
+  .cfg-row{
+    display:flex;align-items:center;gap:8px;background:var(--white);
+    border:1px solid var(--line-soft);border-radius:8px;padding:8px 10px;
+  }
+  .cfg-row input{flex:1;border:none;background:transparent;padding:4px;min-width:0;}
+  .cfg-row input:focus{outline:none;background:var(--paper-dim);border-radius:5px;}
+  .proj-list{margin:8px 0 0 20px;display:flex;flex-direction:column;gap:6px;}
+  .icon-btn{
+    border:none;background:none;color:var(--muted);padding:4px 6px;border-radius:6px;font-size:15px;line-height:1;
+  }
+  .icon-btn:hover{background:var(--paper-dim);color:var(--rust);}
+
+  /* ---------- Modal ---------- */
+  .overlay{
+    position:fixed;inset:0;background:rgba(21,26,35,.5);
+    display:flex;align-items:center;justify-content:center;z-index:100;
+    padding:20px;backdrop-filter:blur(2px);
+  }
+  .modal{
+    background:var(--paper);border-radius:14px;max-width:520px;width:100%;
+    max-height:88vh;overflow-y:auto;box-shadow:0 24px 60px rgba(0,0,0,.35);
+    border:1px solid var(--line);
+  }
+  .modal-head{padding:20px 22px 12px;display:flex;justify-content:space-between;align-items:flex-start;}
+  .modal-head h2{font-family:var(--font-display);font-size:19px;margin:0;font-weight:600;}
+  .modal-close{background:none;border:none;font-size:20px;color:var(--muted);padding:2px 8px;}
+  .modal-body{padding:4px 22px 22px;display:flex;flex-direction:column;gap:14px;}
+  .field label{display:block;font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);margin-bottom:5px;}
+  .field input, .field select, .field textarea{
+    width:100%;padding:9px 11px;border:1px solid var(--line);border-radius:8px;background:var(--white);
+  }
+  .field textarea{min-height:70px;resize:vertical;}
+  .field-row{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
+  .modal-actions{display:flex;justify-content:space-between;gap:10px;margin-top:6px;padding-top:14px;border-top:1px solid var(--line-soft);}
+  .status-picker{display:flex;gap:6px;}
+  .status-picker button{
+    flex:1;padding:8px;border-radius:7px;border:1px solid var(--line);background:var(--white);
+    font-size:12px;font-weight:600;color:var(--muted);
+  }
+  .status-picker button.active{background:var(--ink);color:var(--paper);border-color:var(--ink);}
+
+  .fab{
+    position:fixed;bottom:24px;right:24px;z-index:40;
+    box-shadow:0 10px 30px rgba(21,26,35,.35);
+  }
+
+  .toast{
+    position:fixed;bottom:24px;left:24px;background:var(--ink);color:var(--paper);
+    padding:10px 16px;border-radius:8px;font-size:13px;z-index:200;
+    box-shadow:var(--shadow);opacity:0;transform:translateY(8px);transition:.2s;pointer-events:none;
+  }
+  .toast.show{opacity:1;transform:translateY(0);}
+
+  .empty-state{text-align:center;padding:60px 20px;color:var(--muted);}
+  .empty-state .big{font-family:var(--font-display);font-size:20px;color:var(--ink);margin-bottom:6px;}
+
+  select#instFilter, select#projFilter{max-width:220px;}
+
+  @media (max-width:860px){
+    .board{grid-template-columns:1fr;}
+    header.top{padding:20px 0 14px;}
+    header.top h1{font-size:21px;}
+    .field-row{grid-template-columns:1fr;}
+    .fab{bottom:16px;right:16px;}
+  }
+</style>
+</head>
+<body>
+<div id="app">
+  <header class="top">
+    <div class="head-left">
+      <div class="brand-mark">GT</div>
+      <div>
+        <h1>Gestor de Tarefas</h1>
+      </div>
+    </div>
+    <div style="display:flex;align-items:center;gap:14px;">
+      <div class="save-state" id="saveState"><span class="dot" id="saveDot"></span><span id="saveLabel">carregando…</span></div>
+      <div id="userBox" style="display:none;align-items:center;gap:8px;font-size:13px;">
+        <span class="avatar" id="userAvatar"></span>
+        <span id="userName" style="font-weight:600;"></span>
+        <button class="btn ghost small" id="changePassBtn">Trocar senha</button>
+        <button class="btn ghost small" id="logoutBtn">Sair</button>
+      </div>
+    </div>
+  </header>
+
+  <nav class="tabs" id="tabs"></nav>
+  <div id="banner" class="banner"></div>
+  <div id="tabContent"></div>
+</div>
+
+<button class="btn fab" id="fabAdd" style="display:none;">+ Nova tarefa</button>
+<div class="toast" id="toast"></div>
+
+<!-- ===== Tela de login ===== -->
+<div class="overlay" id="loginOverlay" style="z-index:500;">
+  <div class="modal" style="max-width:360px;">
+    <div class="modal-head">
+      <h2>Entrar</h2>
+    </div>
+    <div class="modal-body">
+      <div class="hint" style="margin-top:-8px;" id="loginHint">Acesso ao Gestor de Tarefas.</div>
+      <div class="field"><label>Usuário</label>
+        <input id="loginUser" placeholder="seu usuário" autocomplete="username"></div>
+      <div class="field"><label>Senha</label>
+        <input id="loginPass" type="password" placeholder="sua senha" autocomplete="current-password"></div>
+      <div id="loginError" style="color:var(--bad);font-size:13px;display:none;"></div>
+      <div class="modal-actions" style="justify-content:flex-end;">
+        <button class="btn" id="loginBtn">Entrar</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ================== CONFIG ================== */
+// Cole aqui a URL do seu Web App do Google Apps Script (termina em /exec)
+const API_URL = 'https://script.google.com/macros/s/AKfycbxxAKkvW9irUF7klOLRfq_UWxRw7wdG34ibpxUFaxBtjfXA1Lzjx0kFzZoc9cSe1roI/exec';
+
+/* ================== STATE ================== */
+const uid = () => Math.random().toString(36).slice(2,10);
+let session = null; // { token, usuario, nome }
+
+const PALETTE = ['#2f6f6a','#a8452f','#8a6d3b','#4a5a8a','#6a4a7a'];
+
+function defaultState(){
+  const instituicoes = [1,2,3,4,5].map((n,i)=>({
+    id: uid(), nome: `Instituição ${n}`, cor: PALETTE[i % PALETTE.length],
+    projetos: [{id: uid(), nome: 'Projeto principal', sigla: `PROJ-${n}`}]
+  }));
+  const certidaoTipos = [
+    'Certidão Divida Ativa da União','Certidão Dívida Ativa Estadual','Certidão Débitos Municipais',
+    'Certidão FGTS','Certidão Trabalhista (CNDT)','Certidão CEPIM',
+    'Certidão do TCE','COMTIBA','CMAS','Ata Eleição'
+  ].map(nome=>({id:uid(), nome}));
+  return {
+    membros: [
+      {id:'af', nome:'Ana Flávia'},
+      {id:'sz', nome:'Suzana'},
+      {id:'ac', nome:'Ana Cristina'}
+    ],
+    instituicoes,
+    certidaoTipos,
+    certidoes: [],
+    links: [],
+    tarefas: []
+  };
+}
+
+let state = null;
+let filters = { inst:'', proj:'', resp:'', status:'', tipo:'' };
+let activeTab = 'tarefas';
+let saveTimer = null;
+
+/* ================== API (Google Sheets via Apps Script) ================== */
+async function apiCall(action, params, method){
+  if(!API_URL || API_URL.indexOf('COLE_AQUI') === 0){
+    throw new Error('A URL do Apps Script ainda não foi configurada no topo do arquivo (API_URL).');
+  }
+  if(method === 'POST'){
+    const body = new URLSearchParams({action, ...params});
+    const res = await fetch(API_URL, {method:'POST', body});
+    return res.json();
+  } else {
+    const qs = new URLSearchParams({action, ...params});
+    const res = await fetch(`${API_URL}?${qs.toString()}`);
+    return res.json();
+  }
+}
+
+async function apiLogin(usuario, senha){
+  return apiCall('login', {usuario, senha}, 'GET');
+}
+
+async function apiGetData(){
+  return apiCall('getData', {token: session.token}, 'GET');
+}
+
+async function apiSaveData(dataObj){
+  return apiCall('saveData', {token: session.token, payload: JSON.stringify(dataObj)}, 'POST');
+}
+
+async function apiChangePassword(senhaAtual, novaSenha){
+  return apiCall('changePassword', {token: session.token, senhaAtual, novaSenha}, 'POST');
+}
+
+/* ================== SESSÃO / LOGIN ================== */
+function showLogin(msg){
+  document.getElementById('loginOverlay').style.display = 'flex';
+  document.getElementById('userBox').style.display = 'none';
+  const err = document.getElementById('loginError');
+  if(msg){ err.textContent = msg; err.style.display='block'; } else { err.style.display='none'; }
+  setSaveState('idle');
+}
+
+function hideLogin(){
+  document.getElementById('loginOverlay').style.display = 'none';
+}
+
+async function doLogin(){
+  const usuario = document.getElementById('loginUser').value.trim();
+  const senha = document.getElementById('loginPass').value;
+  const btn = document.getElementById('loginBtn');
+  const err = document.getElementById('loginError');
+  err.style.display='none';
+  if(!usuario || !senha){ err.textContent='Preencha usuário e senha.'; err.style.display='block'; return; }
+  btn.textContent = 'Entrando…'; btn.disabled = true;
+  try{
+    const res = await apiLogin(usuario, senha);
+    if(!res.ok){
+      err.textContent = res.error || 'Usuário ou senha inválidos.';
+      err.style.display='block';
+      return;
+    }
+    session = { token: res.token, usuario, nome: res.nome || usuario };
+    sessionStorage.setItem('gt_session', JSON.stringify(session));
+    hideLogin();
+    await initApp();
+  }catch(e){
+    console.error(e);
+    err.textContent = 'Não foi possível conectar. Verifique a URL do Apps Script e sua conexão.';
+    err.style.display='block';
+  }finally{
+    btn.textContent = 'Entrar'; btn.disabled = false;
+  }
+}
+
+function doLogout(){
+  session = null;
+  sessionStorage.removeItem('gt_session');
+  showLogin();
+}
+
+function updateUserBox(){
+  const box = document.getElementById('userBox');
+  if(!session){ box.style.display='none'; return; }
+  box.style.display='flex';
+  document.getElementById('userAvatar').textContent = initials(session.nome);
+  document.getElementById('userName').textContent = session.nome;
+}
+
+function openChangePasswordModal(){
+  const overlay = document.createElement('div');
+  overlay.className='overlay';
+  overlay.innerHTML = `
+    <div class="modal" style="max-width:380px;">
+      <div class="modal-head">
+        <h2>Trocar senha</h2>
+        <button class="modal-close">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="field"><label>Senha atual</label>
+          <input id="cp_atual" type="password" autocomplete="current-password"></div>
+        <div class="field"><label>Nova senha</label>
+          <input id="cp_nova" type="password" autocomplete="new-password"></div>
+        <div class="field"><label>Confirmar nova senha</label>
+          <input id="cp_conf" type="password" autocomplete="new-password"></div>
+        <div id="cp_error" style="color:var(--bad);font-size:13px;display:none;"></div>
+        <div class="modal-actions" style="justify-content:flex-end;">
+          <button class="btn ghost" id="cp_cancel">Cancelar</button>
+          <button class="btn" id="cp_save">Salvar nova senha</button>
+        </div>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+  function close(){ overlay.remove(); }
+  overlay.querySelector('.modal-close').onclick = close;
+  overlay.querySelector('#cp_cancel').onclick = close;
+  overlay.onclick = e=>{ if(e.target===overlay) close(); };
+
+  overlay.querySelector('#cp_save').onclick = async ()=>{
+    const atual = overlay.querySelector('#cp_atual').value;
+    const nova = overlay.querySelector('#cp_nova').value;
+    const conf = overlay.querySelector('#cp_conf').value;
+    const err = overlay.querySelector('#cp_error');
+    err.style.display='none';
+    if(!atual || !nova || !conf){ err.textContent='Preencha todos os campos.'; err.style.display='block'; return; }
+    if(nova !== conf){ err.textContent='A nova senha e a confirmação não coincidem.'; err.style.display='block'; return; }
+    if(nova.length < 4){ err.textContent='A nova senha deve ter pelo menos 4 caracteres.'; err.style.display='block'; return; }
+    const btn = overlay.querySelector('#cp_save');
+    btn.disabled = true; btn.textContent = 'Salvando…';
+    try{
+      const res = await apiChangePassword(atual, nova);
+      if(!res.ok){
+        err.textContent = res.error || 'Não foi possível trocar a senha.';
+        err.style.display='block';
+        btn.disabled = false; btn.textContent = 'Salvar nova senha';
+        return;
+      }
+      close();
+      toast('Senha alterada com sucesso.');
+    }catch(e){
+      err.textContent = 'Erro de conexão. Tente novamente.';
+      err.style.display='block';
+      btn.disabled = false; btn.textContent = 'Salvar nova senha';
+    }
+  };
+}
+
+/* ================== STORAGE I/O ================== */
+async function loadState(){
+  try{
+    const res = await apiGetData();
+    if(!res.ok){
+      if(/sess/i.test(res.error||'')){ doLogout(); return; }
+      throw new Error(res.error || 'Falha ao carregar dados.');
+    }
+    state = res.data ? Object.assign(defaultState(), res.data) : defaultState();
+    if(!state.membros || !state.membros.length) state.membros = defaultState().membros;
+    if(!res.data) await persist(true);
+    setSaveState('ok');
+  }catch(e){
+    console.error('load error', e);
+    setSaveState('error');
+    toast('Erro ao carregar dados da planilha.');
+    state = defaultState();
+  }
+  render();
+}
+
+async function persist(silent){
+  if(!silent) setSaveState('saving');
+  try{
+    const res = await apiSaveData(state);
+    if(!res.ok){
+      if(/sess/i.test(res.error||'')){ doLogout(); return; }
+      throw new Error(res.error);
+    }
+    setSaveState('ok');
+  }catch(e){
+    console.error('save error', e);
+    setSaveState('error');
+  }
+}
+
+function scheduleSave(){
+  setSaveState('saving');
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(()=>persist(false), 500);
+}
+
+function setSaveState(s){
+  const dot = document.getElementById('saveDot');
+  const lbl = document.getElementById('saveLabel');
+  if(!dot) return;
+  if(s==='saving'){ dot.className='dot saving'; lbl.textContent='salvando…'; }
+  else if(s==='error'){ dot.className='dot'; dot.style.background='var(--bad)'; lbl.textContent='erro ao salvar'; }
+  else if(s==='idle'){ dot.className='dot'; dot.style.background='var(--muted)'; lbl.textContent='desconectado'; }
+  else { dot.className='dot'; dot.style.background='var(--ok)'; lbl.textContent='sincronizado — planilha'; }
+}
+
+/* ================== HELPERS ================== */
+function instById(id){ return state.instituicoes.find(i=>i.id===id); }
+function projById(instId, projId){ const i=instById(instId); return i && i.projetos.find(p=>p.id===projId); }
+function membroById(id){ return state.membros.find(m=>m.id===id); }
+function initials(name){ return (name||'').split(' ').filter(Boolean).slice(0,2).map(w=>w[0]).join('').toUpperCase(); }
+function fmtDate(d){ if(!d) return '—'; const dt = new Date(d+'T00:00:00'); if(isNaN(dt)) return '—'; return dt.toLocaleDateString('pt-BR'); }
+function daysUntil(d){ if(!d) return null; const today = new Date(); today.setHours(0,0,0,0); const dt = new Date(d+'T00:00:00'); return Math.round((dt-today)/86400000); }
+function toast(msg){
+  const t = document.getElementById('toast');
+  t.textContent = msg; t.classList.add('show');
+  clearTimeout(toast._t);
+  toast._t = setTimeout(()=>t.classList.remove('show'), 2200);
+}
+
+const TIPOS_TAREFA = ['Contrato','Cotação','Pagamento','Documentação','Certidão','Prestação de Contas','Outro'];
+const STATUS_COLS = [
+  {id:'afazer', label:'A Fazer'},
+  {id:'andamento', label:'Em Andamento'},
+  {id:'concluido', label:'Concluído'}
+];
+
+/* ================== RENDER: SHELL ================== */
+function render(){
+  renderTabs();
+  renderBanner();
+  const c = document.getElementById('tabContent');
+  const fab = document.getElementById('fabAdd');
+  if(activeTab==='tarefas'){ fab.style.display='inline-flex'; fab.textContent='+ Nova tarefa'; c.innerHTML=''; renderTarefas(c); }
+  else if(activeTab==='certidoes'){ fab.style.display='none'; c.innerHTML=''; renderCertidoes(c); }
+  else if(activeTab==='links'){ fab.style.display='inline-flex'; fab.textContent='+ Novo link'; c.innerHTML=''; renderLinks(c); }
+  else { fab.style.display='none'; c.innerHTML=''; renderConfig(c); }
+}
+
+function renderTabs(){
+  const nav = document.getElementById('tabs');
+  const pendentes = state.tarefas.filter(t=>t.status!=='concluido').length;
+  const certAlertas = countCertAlerts();
+  nav.innerHTML = `
+    <button data-tab="tarefas" class="${activeTab==='tarefas'?'active':''}">Tarefas <span class="count">${pendentes}</span></button>
+    <button data-tab="certidoes" class="${activeTab==='certidoes'?'active':''}">Certidões <span class="count">${certAlertas}</span></button>
+    <button data-tab="links" class="${activeTab==='links'?'active':''}">Central de Links <span class="count">${state.links.length}</span></button>
+    <button data-tab="config" class="${activeTab==='config'?'active':''}">Configurações</button>
+  `;
+  nav.querySelectorAll('button').forEach(b=>b.onclick=()=>{ activeTab=b.dataset.tab; render(); });
+}
+
+function countCertAlerts(){
+  let n=0;
+  for(const inst of state.instituicoes){
+    for(const tipo of state.certidaoTipos){
+      const c = state.certidoes.find(x=>x.instituicaoId===inst.id && x.tipoId===tipo.id);
+      const du = c ? daysUntil(c.proximoVencimento) : null;
+      if(du===null || du<=30) n++;
+    }
+  }
+  return n;
+}
+
+function renderBanner(){
+  const b = document.getElementById('banner');
+  const pendentes = state.tarefas.filter(t=>t.status!=='concluido').length;
+  const atrasadas = state.tarefas.filter(t=>t.status!=='concluido' && t.prazo && daysUntil(t.prazo)<0).length;
+  let vencidas=0, vencendo=0;
+  for(const inst of state.instituicoes){
+    for(const tipo of state.certidaoTipos){
+      const c = state.certidoes.find(x=>x.instituicaoId===inst.id && x.tipoId===tipo.id);
+      const du = c ? daysUntil(c.proximoVencimento) : null;
+      if(du===null || du<0) vencidas++;
+      else if(du<=30) vencendo++;
+    }
+  }
+  b.innerHTML = `
+    <div class="cell"><div class="num">${pendentes}</div><div class="lbl">Tarefas pendentes</div></div>
+    <div class="cell ${atrasadas?'bad':''}"><div class="num">${atrasadas}</div><div class="lbl">Tarefas atrasadas</div></div>
+    <div class="cell ${vencidas?'bad':''}"><div class="num">${vencidas}</div><div class="lbl">Certidões vencidas/sem data</div></div>
+    <div class="cell ${vencendo?'warn':''}"><div class="num">${vencendo}</div><div class="lbl">Vencendo em 30 dias</div></div>
+  `;
+}
+
+/* ================== RENDER: TAREFAS ================== */
+function renderTarefas(c){
+  const filterBar = document.createElement('div');
+  filterBar.className = 'filters';
+  filterBar.innerHTML = `
+    <select id="instFilter"><option value="">Todas instituições</option>
+      ${state.instituicoes.map(i=>`<option value="${i.id}" ${filters.inst===i.id?'selected':''}>${escapeHtml(i.nome)}</option>`).join('')}
+    </select>
+    <select id="projFilter"><option value="">Todos projetos</option></select>
+    <select id="respFilter"><option value="">Todos responsáveis</option>
+      ${state.membros.map(m=>`<option value="${m.id}" ${filters.resp===m.id?'selected':''}>${escapeHtml(m.nome)}</option>`).join('')}
+    </select>
+    <select id="tipoFilter"><option value="">Todos tipos</option>
+      ${TIPOS_TAREFA.map(t=>`<option value="${t}" ${filters.tipo===t?'selected':''}>${t}</option>`).join('')}
+    </select>
+    <div class="spacer"></div>
+    ${(filters.inst||filters.proj||filters.resp||filters.tipo) ? `<button class="chip-clear" id="clearFilters">limpar filtros</button>` : ''}
+  `;
+  c.appendChild(filterBar);
+
+  const instFilterEl = filterBar.querySelector('#instFilter');
+  const projFilterEl = filterBar.querySelector('#projFilter');
+  function refreshProjOptions(){
+    const inst = instById(filters.inst);
+    projFilterEl.innerHTML = `<option value="">Todos projetos</option>` +
+      (inst ? inst.projetos.map(p=>`<option value="${p.id}" ${filters.proj===p.id?'selected':''}>${escapeHtml(p.sigla||p.nome)}</option>`).join('') : '');
+    projFilterEl.disabled = !inst;
+  }
+  refreshProjOptions();
+
+  instFilterEl.onchange = e=>{ filters.inst=e.target.value; filters.proj=''; render(); };
+  projFilterEl.onchange = e=>{ filters.proj=e.target.value; render(); };
+  filterBar.querySelector('#respFilter').onchange = e=>{ filters.resp=e.target.value; render(); };
+  filterBar.querySelector('#tipoFilter').onchange = e=>{ filters.tipo=e.target.value; render(); };
+  const clearBtn = filterBar.querySelector('#clearFilters');
+  if(clearBtn) clearBtn.onclick = ()=>{ filters={inst:'',proj:'',resp:'',status:'',tipo:''}; render(); };
+
+  let list = state.tarefas.filter(t=>{
+    if(filters.inst && t.instituicaoId!==filters.inst) return false;
+    if(filters.proj && t.projetoId!==filters.proj) return false;
+    if(filters.resp && t.responsavelId!==filters.resp) return false;
+    if(filters.tipo && t.tipo!==filters.tipo) return false;
+    return true;
+  });
+
+  if(state.tarefas.length===0){
+    const empty = document.createElement('div');
+    empty.className='empty-state';
+    empty.innerHTML = `<div class="big">Nenhuma tarefa ainda</div><div>Use "+ Nova tarefa" para lançar a primeira solicitação.</div>`;
+    c.appendChild(empty);
+    return;
+  }
+
+  const board = document.createElement('div');
+  board.className = 'board';
+  STATUS_COLS.forEach(col=>{
+    const colEl = document.createElement('div');
+    colEl.className='col';
+    const items = list.filter(t=>t.status===col.id).sort((a,b)=>(a.prazo||'9999').localeCompare(b.prazo||'9999'));
+    colEl.innerHTML = `<div class="col-head"><h3>${col.label}</h3><span class="n">${items.length}</span></div>`;
+    if(items.length===0){
+      colEl.innerHTML += `<div class="empty-col">—</div>`;
+    } else {
+      items.forEach(t=>colEl.appendChild(renderCard(t)));
+    }
+    board.appendChild(colEl);
+  });
+  c.appendChild(board);
+}
+
+function renderCard(t){
+  const inst = instById(t.instituicaoId);
+  const proj = inst ? projById(inst.id, t.projetoId) : null;
+  const resp = membroById(t.responsavelId);
+  const solic = membroById(t.solicitanteId);
+  const du = t.prazo ? daysUntil(t.prazo) : null;
+  let dueClass = '';
+  if(du!==null && t.status!=='concluido'){ if(du<0) dueClass='overdue'; else if(du<=5) dueClass='soon'; }
+  const card = document.createElement('div');
+  card.className='card';
+  if(inst) card.style.setProperty('--inst-color', inst.cor);
+  card.innerHTML = `
+    <div class="tags">
+      <span class="tag type">${escapeHtml(t.tipo||'Outro')}</span>
+      ${inst?`<span class="tag">${escapeHtml(inst.nome)}${proj?` · ${escapeHtml(proj.sigla||proj.nome)}`:''}</span>`:''}
+    </div>
+    <h4>${escapeHtml(t.titulo)}</h4>
+    <div class="meta">
+      <div class="who" title="Solicitado por ${solic?escapeHtml(solic.nome):'—'} · Responsável ${resp?escapeHtml(resp.nome):'—'}">
+        <span class="avatar">${resp?initials(resp.nome):'?'}</span>
+        <span>${resp?escapeHtml(resp.nome.split(' ')[0]):'sem responsável'}</span>
+      </div>
+      <span class="due ${dueClass}">${t.prazo? fmtDate(t.prazo) : 'sem prazo'}</span>
+    </div>
+  `;
+  card.onclick = ()=>openTaskModal(t.id);
+  return card;
+}
+
+/* ================== RENDER: CERTIDÕES ================== */
+function renderCertidoes(c){
+  const filterBar = document.createElement('div');
+  filterBar.className='filters';
+  filterBar.innerHTML = `
+    <select id="instFilterCert"><option value="">Todas instituições</option>
+      ${state.instituicoes.map(i=>`<option value="${i.id}" ${filters.inst===i.id?'selected':''}>${escapeHtml(i.nome)}</option>`).join('')}
+    </select>
+    <div class="spacer"></div>
+  `;
+  c.appendChild(filterBar);
+  filterBar.querySelector('#instFilterCert').onchange = e=>{ filters.inst=e.target.value; render(); };
+
+  const insts = state.instituicoes.filter(i=> !filters.inst || i.id===filters.inst);
+  if(insts.length===0){
+    c.innerHTML += `<div class="empty-state"><div class="big">Nenhuma instituição cadastrada</div><div>Adicione instituições em Configurações.</div></div>`;
+    return;
+  }
+
+  insts.forEach(inst=>{
+    const block = document.createElement('div');
+    block.className='inst-block';
+    let ok=0,warn=0,bad=0;
+    state.certidaoTipos.forEach(tipo=>{
+      const cert = state.certidoes.find(x=>x.instituicaoId===inst.id && x.tipoId===tipo.id);
+      const du = cert ? daysUntil(cert.proximoVencimento) : null;
+      if(du===null || du<0) bad++; else if(du<=30) warn++; else ok++;
+    });
+    block.innerHTML = `
+      <div class="inst-head">
+        <span class="inst-swatch" style="background:${inst.cor}"></span>
+        <h3>${escapeHtml(inst.nome)}</h3>
+        <div class="stats">
+          ${ok?`<span style="color:var(--ok)">${ok} em dia</span>`:''}
+          ${warn?`<span style="color:var(--warn)">${warn} vencendo</span>`:''}
+          ${bad?`<span style="color:var(--bad)">${bad} vencidas/sem data</span>`:''}
+        </div>
+      </div>
+    `;
+    const grid = document.createElement('div');
+    grid.className='cert-grid';
+    state.certidaoTipos.forEach(tipo=>{
+      const cert = state.certidoes.find(x=>x.instituicaoId===inst.id && x.tipoId===tipo.id);
+      const du = cert ? daysUntil(cert.proximoVencimento) : null;
+      let badgeClass='none', badgeText='sem data';
+      if(du!==null){
+        if(du<0){ badgeClass='bad'; badgeText=`vencida há ${Math.abs(du)}d`; }
+        else if(du<=30){ badgeClass='warn'; badgeText=`vence em ${du}d`; }
+        else { badgeClass='ok'; badgeText=`em dia`; }
+      }
+      const cell = document.createElement('div');
+      cell.className='cert-cell';
+      cell.innerHTML = `
+        <div class="cn">${escapeHtml(tipo.nome)}</div>
+        <div class="cd"><span>Últ. renovação</span><span>${cert?fmtDate(cert.ultimaRenovacao):'—'}</span></div>
+        <div class="cd"><span>Próx. vencimento</span><span>${cert?fmtDate(cert.proximoVencimento):'—'}</span></div>
+        <span class="badge ${badgeClass}">${badgeText}</span>
+      `;
+      cell.onclick = ()=>openCertModal(inst.id, tipo.id);
+      grid.appendChild(cell);
+    });
+    block.appendChild(grid);
+    c.appendChild(block);
+  });
+}
+
+/* ================== RENDER: CENTRAL DE LINKS ================== */
+function renderLinks(c){
+  const filterBar = document.createElement('div');
+  filterBar.className='filters';
+  filterBar.innerHTML = `
+    <select id="instFilterLink"><option value="">Todas instituições</option>
+      ${state.instituicoes.map(i=>`<option value="${i.id}" ${filters.inst===i.id?'selected':''}>${escapeHtml(i.nome)}</option>`).join('')}
+    </select>
+    <select id="projFilterLink"><option value="">Todos projetos</option></select>
+    <div class="spacer"></div>
+  `;
+  c.appendChild(filterBar);
+
+  const instFilterEl = filterBar.querySelector('#instFilterLink');
+  const projFilterEl = filterBar.querySelector('#projFilterLink');
+  function refreshProjOptions(){
+    const inst = instById(filters.inst);
+    projFilterEl.innerHTML = `<option value="">Todos projetos</option>` +
+      (inst ? inst.projetos.map(p=>`<option value="${p.id}" ${filters.proj===p.id?'selected':''}>${escapeHtml(p.sigla||p.nome)}</option>`).join('') : '');
+    projFilterEl.disabled = !inst;
+  }
+  refreshProjOptions();
+  instFilterEl.onchange = e=>{ filters.inst=e.target.value; filters.proj=''; render(); };
+  projFilterEl.onchange = e=>{ filters.proj=e.target.value; render(); };
+
+  if(state.instituicoes.length===0){
+    c.innerHTML += `<div class="empty-state"><div class="big">Nenhuma instituição cadastrada</div><div>Adicione instituições e projetos em Configurações.</div></div>`;
+    return;
+  }
+
+  const insts = state.instituicoes.filter(i=> !filters.inst || i.id===filters.inst);
+  let totalShown = 0;
+
+  insts.forEach(inst=>{
+    const projetos = inst.projetos.filter(p=> !filters.proj || p.id===filters.proj);
+    if(projetos.length===0) return;
+
+    const block = document.createElement('div');
+    block.className='inst-block';
+    block.innerHTML = `
+      <div class="inst-head">
+        <span class="inst-swatch" style="background:${inst.cor}"></span>
+        <h3>${escapeHtml(inst.nome)}</h3>
+      </div>
+    `;
+    const body = document.createElement('div');
+    body.style.padding='4px 16px 14px';
+
+    projetos.forEach(proj=>{
+      const links = state.links.filter(l=>l.instituicaoId===inst.id && l.projetoId===proj.id);
+      totalShown += links.length;
+      const projWrap = document.createElement('div');
+      projWrap.style.padding='12px 0';
+      projWrap.style.borderTop='1px solid var(--line-soft)';
+      projWrap.innerHTML = `<div style="font-family:var(--font-mono);font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin-bottom:8px;">${escapeHtml(proj.sigla||proj.nome)} — ${escapeHtml(proj.nome)}</div>`;
+      if(links.length===0){
+        projWrap.innerHTML += `<div class="empty-col" style="text-align:left;padding:2px 0;">Nenhum link cadastrado.</div>`;
+      } else {
+        const grid = document.createElement('div');
+        grid.className='cert-grid';
+        grid.style.background='transparent';
+        grid.style.gap='9px';
+        links.forEach(l=>{
+          const cell = document.createElement('div');
+          cell.className='cert-cell';
+          cell.style.border='1px solid var(--line-soft)';
+          cell.style.borderRadius='8px';
+          cell.innerHTML = `
+            <div class="cn">🔗 ${escapeHtml(l.titulo)}</div>
+            ${l.categoria?`<span class="tag" style="margin-bottom:6px;display:inline-block;">${escapeHtml(l.categoria)}</span>`:''}
+            <div class="cd" style="margin-top:4px;"><a href="${escapeAttr(l.url)}" target="_blank" rel="noopener" style="color:var(--teal);text-decoration:underline;word-break:break-all;" onclick="event.stopPropagation()">${escapeHtml(l.url)}</a></div>
+            ${l.obs?`<div class="cd" style="margin-top:6px;color:var(--muted);">${escapeHtml(l.obs)}</div>`:''}
+          `;
+          cell.onclick = ()=>openLinkModal(l.id);
+          grid.appendChild(cell);
+        });
+        projWrap.appendChild(grid);
+      }
+      body.appendChild(projWrap);
+    });
+    block.appendChild(body);
+    c.appendChild(block);
+  });
+
+  if(totalShown===0 && state.links.length===0){
+    const empty = document.createElement('div');
+    empty.className='empty-state';
+    empty.innerHTML = `<div class="big">Nenhum link cadastrado ainda</div><div>Use "+ Novo link" para adicionar acessos rápidos (pastas, sistemas, planilhas) de cada projeto.</div>`;
+    c.appendChild(empty);
+  }
+}
+
+function openLinkModal(linkId){
+  const isNew = !linkId;
+  const l = isNew ? {
+    id: uid(), titulo:'', url:'', categoria:'',
+    instituicaoId: filters.inst || (state.instituicoes[0]?state.instituicoes[0].id:''),
+    projetoId:'', obs:''
+  } : state.links.find(x=>x.id===linkId);
+
+  const overlay = document.createElement('div');
+  overlay.className='overlay';
+  overlay.innerHTML = `
+    <div class="modal" style="max-width:460px;">
+      <div class="modal-head">
+        <h2>${isNew?'Novo link':'Editar link'}</h2>
+        <button class="modal-close">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="field"><label>Título</label>
+          <input id="l_titulo" placeholder="Ex.: Pasta de documentos no Drive" value="${escapeAttr(l.titulo)}"></div>
+        <div class="field"><label>URL</label>
+          <input id="l_url" placeholder="https://..." value="${escapeAttr(l.url)}"></div>
+        <div class="field-row">
+          <div class="field"><label>Instituição</label>
+            <select id="l_inst">${state.instituicoes.map(i=>`<option value="${i.id}" ${l.instituicaoId===i.id?'selected':''}>${escapeHtml(i.nome)}</option>`).join('')}</select>
+          </div>
+          <div class="field"><label>Projeto</label>
+            <select id="l_proj"></select>
+          </div>
+        </div>
+        <div class="field"><label>Categoria (opcional)</label>
+          <input id="l_cat" placeholder="Ex.: Pasta Drive, Sistema, Cistag, TCE-PR" value="${escapeAttr(l.categoria||'')}"></div>
+        <div class="field"><label>Observação (opcional)</label>
+          <textarea id="l_obs" placeholder="Alguma nota sobre esse link...">${escapeHtml(l.obs||'')}</textarea></div>
+        <div class="modal-actions">
+          <div>${!isNew?`<button class="btn danger small" id="l_del">Excluir</button>`:''}</div>
+          <div style="display:flex;gap:8px;">
+            <button class="btn ghost" id="l_cancel">Cancelar</button>
+            <button class="btn" id="l_save">${isNew?'Adicionar link':'Salvar'}</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+
+  const instSel = overlay.querySelector('#l_inst');
+  const projSel = overlay.querySelector('#l_proj');
+  function refreshProj(){
+    const inst = instById(instSel.value);
+    projSel.innerHTML = inst ? inst.projetos.map(p=>`<option value="${p.id}" ${l.projetoId===p.id?'selected':''}>${escapeHtml(p.sigla||p.nome)} — ${escapeHtml(p.nome)}</option>`).join('') : '';
+  }
+  refreshProj();
+  instSel.onchange = ()=>{ l.projetoId=''; refreshProj(); };
+
+  function close(){ overlay.remove(); }
+  overlay.querySelector('.modal-close').onclick = close;
+  overlay.querySelector('#l_cancel').onclick = close;
+  overlay.onclick = e=>{ if(e.target===overlay) close(); };
+
+  if(!isNew){
+    overlay.querySelector('#l_del').onclick = ()=>{
+      if(!confirm('Excluir este link?')) return;
+      state.links = state.links.filter(x=>x.id!==l.id);
+      scheduleSave(); close(); render(); toast('Link excluído.');
+    };
+  }
+
+  overlay.querySelector('#l_save').onclick = ()=>{
+    const titulo = overlay.querySelector('#l_titulo').value.trim();
+    const url = overlay.querySelector('#l_url').value.trim();
+    if(!titulo || !url){ toast('Preencha título e URL.'); return; }
+    if(!/^https?:\/\//i.test(url)){ toast('A URL precisa começar com http:// ou https://'); return; }
+    if(!projSel.value){ toast('Selecione o projeto.'); return; }
+    l.titulo = titulo;
+    l.url = url;
+    l.instituicaoId = instSel.value;
+    l.projetoId = projSel.value;
+    l.categoria = overlay.querySelector('#l_cat').value.trim();
+    l.obs = overlay.querySelector('#l_obs').value;
+    if(isNew) state.links.push(l);
+    scheduleSave(); close(); render();
+    toast(isNew?'Link adicionado.':'Link atualizado.');
+  };
+}
+
+
+function renderConfig(c){
+  const wrap = document.createElement('div');
+
+  // Instituições
+  const s1 = document.createElement('div'); s1.className='cfg-section';
+  s1.innerHTML = `<h3>Instituições e projetos</h3><div class="hint">Cada instituição pode ter mais de um projeto (com sigla).</div>`;
+  const list1 = document.createElement('div'); list1.className='cfg-list';
+  state.instituicoes.forEach(inst=>{
+    const row = document.createElement('div');
+    row.innerHTML = `
+      <div class="cfg-row">
+        <span class="inst-swatch" style="background:${inst.cor}"></span>
+        <input value="${escapeAttr(inst.nome)}" data-inst="${inst.id}" class="instName">
+        <button class="icon-btn addProj" data-inst="${inst.id}" title="Adicionar projeto">＋ projeto</button>
+        <button class="icon-btn delInst" data-inst="${inst.id}" title="Remover instituição">✕</button>
+      </div>
+      <div class="proj-list" data-projlist="${inst.id}"></div>
+    `;
+    const projList = row.querySelector(`[data-projlist="${inst.id}"]`);
+    inst.projetos.forEach(p=>{
+      const pr = document.createElement('div');
+      pr.className='cfg-row';
+      pr.innerHTML = `
+        <input value="${escapeAttr(p.sigla||'')}" placeholder="Sigla" data-inst="${inst.id}" data-proj="${p.id}" class="projSigla" style="max-width:110px;flex:none;">
+        <input value="${escapeAttr(p.nome)}" placeholder="Nome do projeto" data-inst="${inst.id}" data-proj="${p.id}" class="projNome">
+        <button class="icon-btn delProj" data-inst="${inst.id}" data-proj="${p.id}">✕</button>
+      `;
+      projList.appendChild(pr);
+    });
+    list1.appendChild(row);
+  });
+  s1.appendChild(list1);
+  const addInstBtn = document.createElement('button');
+  addInstBtn.className='btn ghost small'; addInstBtn.style.marginTop='10px';
+  addInstBtn.textContent = '+ Adicionar instituição';
+  addInstBtn.onclick = ()=>{
+    state.instituicoes.push({id:uid(), nome:'Nova instituição', cor: PALETTE[state.instituicoes.length % PALETTE.length], projetos:[{id:uid(), nome:'Projeto', sigla:'SIGLA'}]});
+    scheduleSave(); render();
+  };
+  s1.appendChild(addInstBtn);
+  wrap.appendChild(s1);
+
+  // Tipos de certidão
+  const s2 = document.createElement('div'); s2.className='cfg-section';
+  s2.innerHTML = `<h3>Tipos de certidão</h3><div class="hint">A lista usada nas 5 instituições.</div>`;
+  const list2 = document.createElement('div'); list2.className='cfg-list';
+  state.certidaoTipos.forEach(tipo=>{
+    const row = document.createElement('div'); row.className='cfg-row';
+    row.innerHTML = `
+      <input value="${escapeAttr(tipo.nome)}" data-tipo="${tipo.id}" class="tipoNome">
+      <button class="icon-btn delTipo" data-tipo="${tipo.id}">✕</button>
+    `;
+    list2.appendChild(row);
+  });
+  s2.appendChild(list2);
+  const addTipoBtn = document.createElement('button');
+  addTipoBtn.className='btn ghost small'; addTipoBtn.style.marginTop='10px';
+  addTipoBtn.textContent='+ Adicionar tipo de certidão';
+  addTipoBtn.onclick = ()=>{ state.certidaoTipos.push({id:uid(), nome:'Nova certidão'}); scheduleSave(); render(); };
+  s2.appendChild(addTipoBtn);
+  wrap.appendChild(s2);
+
+  // Membros
+  const s3 = document.createElement('div'); s3.className='cfg-section';
+  s3.innerHTML = `<h3>Equipe</h3><div class="hint">Quem solicita e quem executa as tarefas.</div>`;
+  const list3 = document.createElement('div'); list3.className='cfg-list';
+  state.membros.forEach(m=>{
+    const row = document.createElement('div'); row.className='cfg-row';
+    row.innerHTML = `
+      <span class="avatar">${initials(m.nome)}</span>
+      <input value="${escapeAttr(m.nome)}" data-membro="${m.id}" class="membroNome">
+      <button class="icon-btn delMembro" data-membro="${m.id}">✕</button>
+    `;
+    list3.appendChild(row);
+  });
+  s3.appendChild(list3);
+  const addMembroBtn = document.createElement('button');
+  addMembroBtn.className='btn ghost small'; addMembroBtn.style.marginTop='10px';
+  addMembroBtn.textContent='+ Adicionar pessoa';
+  addMembroBtn.onclick = ()=>{ state.membros.push({id:uid(), nome:'Novo membro'}); scheduleSave(); render(); };
+  s3.appendChild(addMembroBtn);
+  wrap.appendChild(s3);
+
+  c.appendChild(wrap);
+
+  // wire events (debounced text inputs, immediate for deletes)
+  wrap.querySelectorAll('.instName').forEach(inp=> inp.oninput = e=>{ instById(e.target.dataset.inst).nome = e.target.value; scheduleSave(); });
+  wrap.querySelectorAll('.projSigla').forEach(inp=> inp.oninput = e=>{ projById(e.target.dataset.inst, e.target.dataset.proj).sigla = e.target.value; scheduleSave(); });
+  wrap.querySelectorAll('.projNome').forEach(inp=> inp.oninput = e=>{ projById(e.target.dataset.inst, e.target.dataset.proj).nome = e.target.value; scheduleSave(); });
+  wrap.querySelectorAll('.tipoNome').forEach(inp=> inp.oninput = e=>{ state.certidaoTipos.find(t=>t.id===e.target.dataset.tipo).nome = e.target.value; scheduleSave(); });
+  wrap.querySelectorAll('.membroNome').forEach(inp=> inp.oninput = e=>{ membroById(e.target.dataset.membro).nome = e.target.value; scheduleSave(); render(); });
+
+  wrap.querySelectorAll('.addProj').forEach(btn=> btn.onclick = e=>{
+    instById(e.target.dataset.inst).projetos.push({id:uid(), nome:'Projeto', sigla:'SIGLA'});
+    scheduleSave(); render();
+  });
+  wrap.querySelectorAll('.delInst').forEach(btn=> btn.onclick = e=>{
+    if(!confirm('Remover esta instituição? Tarefas e certidões vinculadas continuarão referenciando o registro removido.')) return;
+    state.instituicoes = state.instituicoes.filter(i=>i.id!==e.target.dataset.inst);
+    scheduleSave(); render();
+  });
+  wrap.querySelectorAll('.delProj').forEach(btn=> btn.onclick = e=>{
+    const inst = instById(e.target.dataset.inst);
+    inst.projetos = inst.projetos.filter(p=>p.id!==e.target.dataset.proj);
+    scheduleSave(); render();
+  });
+  wrap.querySelectorAll('.delTipo').forEach(btn=> btn.onclick = e=>{
+    if(!confirm('Remover este tipo de certidão de todas as instituições?')) return;
+    state.certidaoTipos = state.certidaoTipos.filter(t=>t.id!==e.target.dataset.tipo);
+    scheduleSave(); render();
+  });
+  wrap.querySelectorAll('.delMembro').forEach(btn=> btn.onclick = e=>{
+    if(!confirm('Remover esta pessoa da equipe?')) return;
+    state.membros = state.membros.filter(m=>m.id!==e.target.dataset.membro);
+    scheduleSave(); render();
+  });
+}
+
+/* ================== MODAL: TAREFA ================== */
+function openTaskModal(taskId){
+  const isNew = !taskId;
+  const t = isNew ? {
+    id: uid(), titulo:'', tipo: TIPOS_TAREFA[0],
+    instituicaoId: filters.inst || (state.instituicoes[0]?state.instituicoes[0].id:''),
+    projetoId:'', solicitanteId:'', responsavelId:'', prazo:'', status:'afazer', descricao:''
+  } : state.tarefas.find(x=>x.id===taskId);
+
+  const overlay = document.createElement('div');
+  overlay.className='overlay';
+  overlay.innerHTML = `
+    <div class="modal">
+      <div class="modal-head">
+        <h2>${isNew?'Nova tarefa':'Editar tarefa'}</h2>
+        <button class="modal-close">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="field"><label>Título da solicitação</label>
+          <input id="f_titulo" placeholder="Ex.: Contrato de prestação de serviço — palestrante X" value="${escapeAttr(t.titulo)}"></div>
+
+        <div class="field-row">
+          <div class="field"><label>Tipo</label>
+            <select id="f_tipo">${TIPOS_TAREFA.map(ti=>`<option ${t.tipo===ti?'selected':''}>${ti}</option>`).join('')}</select>
+          </div>
+          <div class="field"><label>Prazo</label>
+            <input id="f_prazo" type="date" value="${t.prazo||''}"></div>
+        </div>
+
+        <div class="field-row">
+          <div class="field"><label>Instituição</label>
+            <select id="f_inst">${state.instituicoes.map(i=>`<option value="${i.id}" ${t.instituicaoId===i.id?'selected':''}>${escapeHtml(i.nome)}</option>`).join('')}</select>
+          </div>
+          <div class="field"><label>Projeto</label>
+            <select id="f_proj"></select>
+          </div>
+        </div>
+
+        <div class="field-row">
+          <div class="field"><label>Solicitado por</label>
+            <select id="f_solic"><option value="">—</option>${state.membros.map(m=>`<option value="${m.id}" ${t.solicitanteId===m.id?'selected':''}>${escapeHtml(m.nome)}</option>`).join('')}</select>
+          </div>
+          <div class="field"><label>Responsável por executar</label>
+            <select id="f_resp"><option value="">—</option>${state.membros.map(m=>`<option value="${m.id}" ${t.responsavelId===m.id?'selected':''}>${escapeHtml(m.nome)}</option>`).join('')}</select>
+          </div>
+        </div>
+
+        <div class="field"><label>Detalhes / orientações</label>
+          <textarea id="f_desc" placeholder="Ex.: função, carga horária, valores, período de contratação...">${escapeHtml(t.descricao||'')}</textarea></div>
+
+        <div class="field"><label>Status</label>
+          <div class="status-picker" id="f_status">
+            ${STATUS_COLS.map(sc=>`<button type="button" data-s="${sc.id}" class="${t.status===sc.id?'active':''}">${sc.label}</button>`).join('')}
+          </div>
+        </div>
+
+        <div class="modal-actions">
+          <div>${!isNew?`<button class="btn danger small" id="f_del">Excluir</button>`:''}</div>
+          <div style="display:flex;gap:8px;">
+            <button class="btn ghost" id="f_cancel">Cancelar</button>
+            <button class="btn" id="f_save">${isNew?'Criar tarefa':'Salvar'}</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+
+  const instSel = overlay.querySelector('#f_inst');
+  const projSel = overlay.querySelector('#f_proj');
+  function refreshProj(){
+    const inst = instById(instSel.value);
+    projSel.innerHTML = inst ? inst.projetos.map(p=>`<option value="${p.id}" ${t.projetoId===p.id?'selected':''}>${escapeHtml(p.sigla||p.nome)} — ${escapeHtml(p.nome)}</option>`).join('') : '';
+  }
+  refreshProj();
+  instSel.onchange = ()=>{ t.projetoId=''; refreshProj(); };
+
+  let curStatus = t.status;
+  overlay.querySelectorAll('#f_status button').forEach(b=>b.onclick=()=>{
+    curStatus = b.dataset.s;
+    overlay.querySelectorAll('#f_status button').forEach(x=>x.classList.remove('active'));
+    b.classList.add('active');
+  });
+
+  function close(){ overlay.remove(); }
+  overlay.querySelector('.modal-close').onclick = close;
+  overlay.querySelector('#f_cancel').onclick = close;
+  overlay.onclick = e=>{ if(e.target===overlay) close(); };
+
+  if(!isNew){
+    overlay.querySelector('#f_del').onclick = ()=>{
+      if(!confirm('Excluir esta tarefa?')) return;
+      state.tarefas = state.tarefas.filter(x=>x.id!==t.id);
+      scheduleSave(); close(); render(); toast('Tarefa excluída.');
+    };
+  }
+
+  overlay.querySelector('#f_save').onclick = ()=>{
+    const titulo = overlay.querySelector('#f_titulo').value.trim();
+    if(!titulo){ toast('Dê um título para a tarefa.'); return; }
+    t.titulo = titulo;
+    t.tipo = overlay.querySelector('#f_tipo').value;
+    t.prazo = overlay.querySelector('#f_prazo').value;
+    t.instituicaoId = instSel.value;
+    t.projetoId = projSel.value;
+    t.solicitanteId = overlay.querySelector('#f_solic').value;
+    t.responsavelId = overlay.querySelector('#f_resp').value;
+    t.descricao = overlay.querySelector('#f_desc').value;
+    t.status = curStatus;
+    if(isNew) state.tarefas.push(t);
+    scheduleSave(); close(); render();
+    toast(isNew?'Tarefa criada.':'Tarefa atualizada.');
+  };
+}
+
+/* ================== MODAL: CERTIDÃO ================== */
+function openCertModal(instId, tipoId){
+  let cert = state.certidoes.find(x=>x.instituicaoId===instId && x.tipoId===tipoId);
+  const isNew = !cert;
+  if(isNew) cert = {id:uid(), instituicaoId:instId, tipoId, ultimaRenovacao:'', proximoVencimento:''};
+  const inst = instById(instId);
+  const tipo = state.certidaoTipos.find(t=>t.id===tipoId);
+
+  const overlay = document.createElement('div');
+  overlay.className='overlay';
+  overlay.innerHTML = `
+    <div class="modal" style="max-width:420px;">
+      <div class="modal-head">
+        <h2>${escapeHtml(tipo.nome)}</h2>
+        <button class="modal-close">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="hint" style="margin-top:-8px;">${escapeHtml(inst.nome)}</div>
+        <div class="field"><label>Última renovação</label>
+          <input id="c_ult" type="date" value="${cert.ultimaRenovacao||''}"></div>
+        <div class="field"><label>Próximo vencimento</label>
+          <input id="c_prox" type="date" value="${cert.proximoVencimento||''}"></div>
+        <div class="modal-actions">
+          <div>${!isNew?`<button class="btn danger small" id="c_del">Limpar datas</button>`:''}</div>
+          <div style="display:flex;gap:8px;">
+            <button class="btn ghost" id="c_cancel">Cancelar</button>
+            <button class="btn" id="c_save">Salvar</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+  function close(){ overlay.remove(); }
+  overlay.querySelector('.modal-close').onclick = close;
+  overlay.querySelector('#c_cancel').onclick = close;
+  overlay.onclick = e=>{ if(e.target===overlay) close(); };
+  if(!isNew){
+    overlay.querySelector('#c_del').onclick = ()=>{
+      state.certidoes = state.certidoes.filter(x=>x.id!==cert.id);
+      scheduleSave(); close(); render(); toast('Datas removidas.');
+    };
+  }
+  overlay.querySelector('#c_save').onclick = ()=>{
+    cert.ultimaRenovacao = overlay.querySelector('#c_ult').value;
+    cert.proximoVencimento = overlay.querySelector('#c_prox').value;
+    if(isNew) state.certidoes.push(cert);
+    scheduleSave(); close(); render();
+    toast('Certidão atualizada.');
+  };
+}
+
+/* ================== UTIL ================== */
+function escapeHtml(s){ return String(s==null?'':s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function escapeAttr(s){ return escapeHtml(s); }
+
+/* ================== INIT ================== */
+document.getElementById('fabAdd').onclick = ()=>{ if(activeTab==='links') openLinkModal(null); else openTaskModal(null); };
+document.getElementById('loginBtn').onclick = doLogin;
+document.getElementById('logoutBtn').onclick = doLogout;
+document.getElementById('changePassBtn').onclick = openChangePasswordModal;
+document.getElementById('loginPass').addEventListener('keydown', e=>{ if(e.key==='Enter') doLogin(); });
+document.getElementById('loginUser').addEventListener('keydown', e=>{ if(e.key==='Enter') doLogin(); });
+
+async function initApp(){
+  updateUserBox();
+  await loadState();
+}
+
+(function boot(){
+  const saved = sessionStorage.getItem('gt_session');
+  if(saved){
+    try{
+      session = JSON.parse(saved);
+      hideLogin();
+      initApp();
+      return;
+    }catch(e){ /* sessão inválida, cai no login */ }
+  }
+  showLogin();
+})();
+</script>
+</body>
+</html>
