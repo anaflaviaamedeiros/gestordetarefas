@@ -542,7 +542,7 @@ async function loadState(){
     state = res.data ? Object.assign(defaultState(), res.data) : defaultState();
     if(!state.membros || !state.membros.length) state.membros = defaultState().membros;
     if(!state.tiposTarefa || !state.tiposTarefa.length) state.tiposTarefa = defaultState().tiposTarefa;
-    state.tarefas.forEach(t=>{ if(typeof t.lida === 'undefined') t.lida = false; });
+    state.tarefas.forEach(t=>{ if(typeof t.lida === 'undefined') t.lida = false; if(typeof t.lidaEm === 'undefined') t.lidaEm = null; });
     if(!res.data) await persist(true);
     setSaveState('ok');
   }catch(e){
@@ -595,6 +595,12 @@ function currentMembro(){
 }
 function initials(name){ return (name||'').split(' ').filter(Boolean).slice(0,2).map(w=>w[0]).join('').toUpperCase(); }
 function fmtDate(d){ if(!d) return '—'; const dt = new Date(d+'T00:00:00'); if(isNaN(dt)) return '—'; return dt.toLocaleDateString('pt-BR'); }
+function fmtDateTime(iso){
+  if(!iso) return '—';
+  const dt = new Date(iso);
+  if(isNaN(dt)) return '—';
+  return dt.toLocaleDateString('pt-BR') + ' ' + dt.toLocaleTimeString('pt-BR', {hour:'2-digit', minute:'2-digit'});
+}
 function daysUntil(d){ if(!d) return null; const today = new Date(); today.setHours(0,0,0,0); const dt = new Date(d+'T00:00:00'); return Math.round((dt-today)/86400000); }
 function toast(msg){
   const t = document.getElementById('toast');
@@ -787,6 +793,7 @@ function renderTarefasLista(c, list){
           <th style="text-align:left;padding:10px 12px;">Responsável</th>
           <th style="text-align:left;padding:10px 12px;">Prazo</th>
           <th style="text-align:left;padding:10px 12px;">Status</th>
+          <th style="text-align:left;padding:10px 12px;">Lida em</th>
         </tr>
       </thead>
       <tbody></tbody>
@@ -818,6 +825,7 @@ function renderTarefasLista(c, list){
       <td style="padding:9px 12px;cursor:pointer;">${resp?escapeHtml(resp.nome):'—'}</td>
       <td style="padding:9px 12px;font-family:var(--font-mono);cursor:pointer;">${t.prazo?fmtDate(t.prazo):'—'}</td>
       <td style="padding:9px 12px;cursor:pointer;"><span class="badge ${info.cls}">${info.label}</span></td>
+      <td style="padding:9px 12px;font-family:var(--font-mono);font-size:12px;color:var(--muted);cursor:pointer;">${t.lidaEm?fmtDateTime(t.lidaEm):'—'}</td>
     `;
     tr.querySelectorAll('td:not(:first-child)').forEach(td=> td.onclick = ()=>openTaskModal(t.id));
     tr.querySelector('.rowCheck').onclick = (e)=>{
@@ -1427,6 +1435,7 @@ function openTaskModal(taskId){
   // marcar como lida assim que a pessoa responsável abre a tarefa
   if(!isNew && me && t.responsavelId===me.id && !t.lida){
     t.lida = true;
+    t.lidaEm = new Date().toISOString();
     scheduleSave();
     render(); // atualiza o negrito na lista/quadro por trás do modal
   }
@@ -1581,6 +1590,7 @@ function openTaskModal(taskId){
     if(isNew || t.responsavelId !== originalResponsavelId){
       // tarefa nova, ou responsável mudou: sempre nasce como "não lida" — só vira lida quando alguém efetivamente abre a tarefa
       t.lida = false;
+      t.lidaEm = null;
     }
 
     if(querRecorrente){
@@ -1610,7 +1620,7 @@ function maybeGenerateNextRecurrence(t, prevStatus, newStatus){
         instituicaoId: t.instituicaoId, projetoId: t.projetoId,
         solicitanteId: t.solicitanteId, responsavelId: t.responsavelId,
         prazo: proximoPrazo, status: 'afazer', descricao: t.descricao,
-        recorrencia: t.recorrencia, lida:false
+        recorrencia: t.recorrencia, lida:false, lidaEm:null
       });
     }
   }
