@@ -425,7 +425,7 @@ async function apiChangePassword(senhaAtual, novaSenha){
 async function apiNotify(tipo, membro, param1, param2){
   if(!session || !membro || !membro.whatsapp || !membro.callmebotApiKey) return;
   try{
-    const res = await apiCall('notify', {tipo, telefone: membro.whatsapp, apikey: membro.callmebotApiKey, param1: param1||'', param2: param2||''}, 'POST');
+    const res = await apiCall('notify', {token: session.token, tipo, telefone: membro.whatsapp, apikey: membro.callmebotApiKey, param1: param1||'', param2: param2||''}, 'POST');
     if(!res.ok) console.warn('Notificação não enviada:', res.error);
   }catch(e){
     console.warn('Erro ao notificar WhatsApp:', e);
