@@ -162,6 +162,7 @@
   }
   .bulk-bar button:hover{background:rgba(255,255,255,.18);}
   .bulk-bar button.danger{background:var(--rust);border-color:var(--rust);}
+  .unread-dot{width:7px;height:7px;border-radius:50%;background:var(--gold);display:inline-block;margin-right:6px;flex:none;}
 
   /* ---------- Kanban ---------- */
   .board{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;align-items:start;}
@@ -541,6 +542,7 @@ async function loadState(){
     state = res.data ? Object.assign(defaultState(), res.data) : defaultState();
     if(!state.membros || !state.membros.length) state.membros = defaultState().membros;
     if(!state.tiposTarefa || !state.tiposTarefa.length) state.tiposTarefa = defaultState().tiposTarefa;
+    state.tarefas.forEach(t=>{ if(typeof t.lida === 'undefined') t.lida = true; });
     if(!res.data) await persist(true);
     setSaveState('ok');
   }catch(e){
@@ -587,6 +589,10 @@ function setSaveState(s){
 function instById(id){ return state.instituicoes.find(i=>i.id===id); }
 function projById(instId, projId){ const i=instById(instId); return i && i.projetos.find(p=>p.id===projId); }
 function membroById(id){ return state.membros.find(m=>m.id===id); }
+function currentMembro(){
+  if(!session) return null;
+  return state.membros.find(m=>normalizeStr(m.nome)===normalizeStr(session.nome)) || null;
+}
 function initials(name){ return (name||'').split(' ').filter(Boolean).slice(0,2).map(w=>w[0]).join('').toUpperCase(); }
 function fmtDate(d){ if(!d) return '—'; const dt = new Date(d+'T00:00:00'); if(isNaN(dt)) return '—'; return dt.toLocaleDateString('pt-BR'); }
 function daysUntil(d){ if(!d) return null; const today = new Date(); today.setHours(0,0,0,0); const dt = new Date(d+'T00:00:00'); return Math.round((dt-today)/86400000); }
@@ -804,7 +810,7 @@ function renderTarefasLista(c, list){
     if(checked) tr.style.background='var(--gold-soft)';
     tr.innerHTML = `
       <td style="padding:9px 8px;text-align:center;"><input type="checkbox" class="rowCheck" data-id="${t.id}" ${checked?'checked':''}></td>
-      <td style="padding:9px 12px;font-weight:600;cursor:pointer;">${t.recorrencia?'🔁 ':''}${escapeHtml(t.titulo)}</td>
+      <td style="padding:9px 12px;font-weight:${t.lida?400:700};cursor:pointer;">${!t.lida?'<span class="unread-dot"></span>':''}${t.recorrencia?'🔁 ':''}${escapeHtml(t.titulo)}</td>
       <td style="padding:9px 12px;cursor:pointer;"><span class="tag type">${escapeHtml(t.tipo||'Outro')}</span></td>
       <td style="padding:9px 12px;cursor:pointer;">${inst?escapeHtml(inst.nome):'—'}</td>
       <td style="padding:9px 12px;cursor:pointer;">${proj?escapeHtml(proj.sigla||proj.nome):'—'}</td>
@@ -857,7 +863,7 @@ function renderCard(t){
       <span class="tag type">${escapeHtml(t.tipo||'Outro')}</span>
       ${inst?`<span class="tag">${escapeHtml(inst.nome)}${proj?` · ${escapeHtml(proj.sigla||proj.nome)}`:''}</span>`:''}
     </div>
-    <h4>${t.recorrencia?'🔁 ':''}${escapeHtml(t.titulo)}</h4>
+    <h4 style="font-weight:${t.lida?500:800};">${!t.lida?'<span class="unread-dot"></span>':''}${t.recorrencia?'🔁 ':''}${escapeHtml(t.titulo)}</h4>
     <div class="meta">
       <div class="who" title="Solicitado por ${solic?escapeHtml(solic.nome):'—'} · Responsável ${resp?escapeHtml(resp.nome):'—'}">
         <span class="avatar">${resp?initials(resp.nome):'?'}</span>
@@ -1412,9 +1418,18 @@ function openTaskModal(taskId){
   const t = isNew ? {
     id: uid(), titulo:'', tipo: state.tiposTarefa[0],
     instituicaoId: filters.inst || (state.instituicoes[0]?state.instituicoes[0].id:''),
-    projetoId:'', solicitanteId:'', responsavelId:'', prazo:'', status:'afazer', descricao:'', recorrencia:null
+    projetoId:'', solicitanteId:'', responsavelId:'', prazo:'', status:'afazer', descricao:'', recorrencia:null, lida:false
   } : state.tarefas.find(x=>x.id===taskId);
   const originalStatus = isNew ? null : t.status;
+  const originalResponsavelId = isNew ? null : t.responsavelId;
+  const me = currentMembro();
+
+  // marcar como lida assim que a pessoa responsável abre a tarefa
+  if(!isNew && me && t.responsavelId===me.id && !t.lida){
+    t.lida = true;
+    scheduleSave();
+    render(); // atualiza o negrito na lista/quadro por trás do modal
+  }
 
   const rec = t.recorrencia || null;
   const overlay = document.createElement('div');
@@ -1563,6 +1578,11 @@ function openTaskModal(taskId){
     t.descricao = overlay.querySelector('#f_desc').value;
     t.status = curStatus;
 
+    if(isNew || t.responsavelId !== originalResponsavelId){
+      // tarefa nova, ou responsável mudou: fica "não lida" a não ser que o próprio responsável seja quem está lançando/reatribuindo
+      t.lida = !!(me && t.responsavelId === me.id);
+    }
+
     if(querRecorrente){
       const tipo = recTipoSel.value;
       t.recorrencia = tipo==='dias' ? {tipo, valor: parseInt(overlay.querySelector('#f_rec_dias').value)||1} : {tipo};
@@ -1590,7 +1610,7 @@ function maybeGenerateNextRecurrence(t, prevStatus, newStatus){
         instituicaoId: t.instituicaoId, projetoId: t.projetoId,
         solicitanteId: t.solicitanteId, responsavelId: t.responsavelId,
         prazo: proximoPrazo, status: 'afazer', descricao: t.descricao,
-        recorrencia: t.recorrencia
+        recorrencia: t.recorrencia, lida:false
       });
     }
   }
