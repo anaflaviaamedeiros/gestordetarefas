@@ -387,18 +387,29 @@ let selectedTaskIds = new Set();
 let saveTimer = null;
 
 /* ================== API (Google Sheets via Apps Script) ================== */
-async function apiCall(action, params, method){
+async function apiCall(action, params, method, _isRetry){
   if(!API_URL || API_URL.indexOf('COLE_AQUI') === 0){
     throw new Error('A URL do Apps Script ainda não foi configurada no topo do arquivo (API_URL).');
   }
-  if(method === 'POST'){
-    const body = new URLSearchParams({action, ...params});
-    const res = await fetch(API_URL, {method:'POST', body});
-    return res.json();
-  } else {
-    const qs = new URLSearchParams({action, ...params});
-    const res = await fetch(`${API_URL}?${qs.toString()}`);
-    return res.json();
+  try{
+    if(method === 'POST'){
+      const body = new URLSearchParams({action, ...params});
+      const res = await fetch(API_URL, {method:'POST', body});
+      if(!res.ok) throw new Error('HTTP ' + res.status);
+      return await res.json();
+    } else {
+      const qs = new URLSearchParams({action, ...params});
+      const res = await fetch(`${API_URL}?${qs.toString()}`);
+      if(!res.ok) throw new Error('HTTP ' + res.status);
+      return await res.json();
+    }
+  }catch(e){
+    // Falha passageira comum do Apps Script (link de conteúdo expirado) — tenta mais uma vez antes de desistir.
+    if(!_isRetry){
+      await new Promise(r=>setTimeout(r, 900));
+      return apiCall(action, params, method, true);
+    }
+    throw e;
   }
 }
 
