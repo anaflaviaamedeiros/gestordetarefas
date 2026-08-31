@@ -749,9 +749,11 @@ function renderCertidoes(c){
       ${state.instituicoes.map(i=>`<option value="${i.id}" ${filters.inst===i.id?'selected':''}>${escapeHtml(i.nome)}</option>`).join('')}
     </select>
     <div class="spacer"></div>
+    <button class="btn ghost small" id="importCertBtn">⇪ Importar certidões</button>
   `;
   c.appendChild(filterBar);
   filterBar.querySelector('#instFilterCert').onchange = e=>{ filters.inst=e.target.value; render(); };
+  filterBar.querySelector('#importCertBtn').onclick = openImportCertModal;
 
   const insts = state.instituicoes.filter(i=> !filters.inst || i.id===filters.inst);
   if(insts.length===0){
@@ -980,6 +982,152 @@ function openLinkModal(linkId){
     if(isNew) state.links.push(l);
     scheduleSave(); close(); render();
     toast(isNew?'Link adicionado.':'Link atualizado.');
+  };
+}
+
+/* ================== IMPORTAR CERTIDÕES ================== */
+function normalizeStr(s){
+  return String(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().trim().replace(/\s+/g,' ');
+}
+
+function pad2(n){ return String(n).padStart(2,'0'); }
+
+function parseDateFlexible(str){
+  if(!str) return null;
+  str = String(str).trim();
+  if(!str) return null;
+  let m = str.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+  if(m) return `${m[1]}-${pad2(m[2])}-${pad2(m[3])}`;
+  m = str.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
+  if(m) return `${m[3]}-${pad2(m[1])}-${pad2(m[2])}`;
+  m = str.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2})$/);
+  if(m) return `20${m[3]}-${pad2(m[1])}-${pad2(m[2])}`;
+  return null;
+}
+
+function parseImportCertidoes(raw){
+  const lines = raw.split('\n').map(l=>l.replace(/\r$/,'')).filter(l=>l.trim()!=='');
+  const rows = [];
+  lines.forEach((line, idx)=>{
+    let cols;
+    if(line.includes('\t')) cols = line.split('\t');
+    else if(line.includes(';')) cols = line.split(';');
+    else cols = line.split(',');
+    cols = cols.map(c=>c.trim());
+    if(cols.length<2) return;
+    const [instRaw, tipoRaw, ultimaRaw, proxRaw] = cols;
+    const ultima = parseDateFlexible(ultimaRaw);
+    const proxima = parseDateFlexible(proxRaw);
+    if(idx===0 && !ultima && !proxima && !parseDateFlexible(instRaw)){
+      // provável linha de cabeçalho — pula
+      const looksHeader = normalizeStr(instRaw).includes('instituic') || normalizeStr(tipoRaw||'').includes('certid');
+      if(looksHeader) return;
+    }
+    const inst = state.instituicoes.find(i=>normalizeStr(i.nome)===normalizeStr(instRaw));
+    const tipo = state.certidaoTipos.find(t=>normalizeStr(t.nome)===normalizeStr(tipoRaw));
+    let status='ok', error='';
+    if(!instRaw || !tipoRaw){ status='erro'; error='faltam colunas'; }
+    else if(!inst){ status='erro'; error='instituição não encontrada'; }
+    else if(!tipo){ status='erro'; error='certidão não encontrada'; }
+    else if(ultimaRaw && !ultima){ status='erro'; error='data de renovação inválida'; }
+    else if(proxRaw && !proxima){ status='erro'; error='data de vencimento inválida'; }
+    rows.push({
+      instRaw: instRaw||'', tipoRaw: tipoRaw||'',
+      instId: inst?inst.id:null, tipoId: tipo?tipo.id:null,
+      ultimaRenovacao: ultima || '', proximoVencimento: proxima || '',
+      status, error
+    });
+  });
+  return rows;
+}
+
+function openImportCertModal(){
+  const overlay = document.createElement('div');
+  overlay.className='overlay';
+  overlay.innerHTML = `
+    <div class="modal" style="max-width:660px;">
+      <div class="modal-head">
+        <h2>Importar certidões</h2>
+        <button class="modal-close">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="hint" style="margin-top:-8px;">
+          Copie no Excel/Google Sheets 4 colunas na ordem <b>Instituição, Certidão, Última renovação, Próximo vencimento</b> (datas em dd/mm/aaaa) e cole abaixo. Os nomes de instituição e certidão precisam bater exatamente com o que está cadastrado em Configurações. Uma eventual linha de cabeçalho é detectada e ignorada.
+        </div>
+        <div class="field"><textarea id="imp_text" style="min-height:150px;font-family:var(--font-mono);font-size:12.5px;" placeholder="Instituição 1	Certidão FGTS	10/01/2026	10/07/2026
+Instituição 1	Certidão do TCE	05/02/2026	05/08/2026"></textarea></div>
+        <div id="imp_preview"></div>
+        <div class="modal-actions">
+          <div></div>
+          <div style="display:flex;gap:8px;">
+            <button class="btn ghost" id="imp_cancel">Cancelar</button>
+            <button class="btn ghost" id="imp_analyze">Analisar</button>
+            <button class="btn" id="imp_confirm" style="display:none;">Importar</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+  function close(){ overlay.remove(); }
+  overlay.querySelector('.modal-close').onclick = close;
+  overlay.querySelector('#imp_cancel').onclick = close;
+  overlay.onclick = e=>{ if(e.target===overlay) close(); };
+
+  let parsedRows = [];
+
+  function renderPreview(){
+    const box = overlay.querySelector('#imp_preview');
+    if(parsedRows.length===0){
+      box.innerHTML = `<div class="hint">Nenhuma linha reconhecida. Confira se colou pelo menos Instituição e Certidão em cada linha.</div>`;
+      overlay.querySelector('#imp_confirm').style.display='none';
+      return;
+    }
+    const okCount = parsedRows.filter(r=>r.status==='ok').length;
+    box.innerHTML = `
+      <div class="hint">${okCount} de ${parsedRows.length} linha(s) prontas para importar.</div>
+      <div style="max-height:220px;overflow-y:auto;border:1px solid var(--line-soft);border-radius:8px;">
+        <table style="width:100%;border-collapse:collapse;font-size:12px;">
+          <thead><tr style="background:var(--paper-dim);">
+            <th style="text-align:left;padding:6px 8px;">Instituição</th>
+            <th style="text-align:left;padding:6px 8px;">Certidão</th>
+            <th style="text-align:left;padding:6px 8px;">Renovação</th>
+            <th style="text-align:left;padding:6px 8px;">Vencimento</th>
+            <th style="text-align:left;padding:6px 8px;">Status</th>
+          </tr></thead>
+          <tbody>
+            ${parsedRows.map(r=>`
+              <tr style="border-top:1px solid var(--line-soft);">
+                <td style="padding:6px 8px;">${escapeHtml(r.instRaw)}</td>
+                <td style="padding:6px 8px;">${escapeHtml(r.tipoRaw)}</td>
+                <td style="padding:6px 8px;">${r.ultimaRenovacao?fmtDate(r.ultimaRenovacao):'—'}</td>
+                <td style="padding:6px 8px;">${r.proximoVencimento?fmtDate(r.proximoVencimento):'—'}</td>
+                <td style="padding:6px 8px;">${r.status==='ok'?'<span class="badge ok">ok</span>':`<span class="badge bad">${escapeHtml(r.error)}</span>`}</td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      </div>
+    `;
+    overlay.querySelector('#imp_confirm').style.display = okCount>0 ? 'inline-flex' : 'none';
+  }
+
+  overlay.querySelector('#imp_analyze').onclick = ()=>{
+    parsedRows = parseImportCertidoes(overlay.querySelector('#imp_text').value);
+    renderPreview();
+  };
+
+  overlay.querySelector('#imp_confirm').onclick = ()=>{
+    let count=0;
+    parsedRows.filter(r=>r.status==='ok').forEach(r=>{
+      let cert = state.certidoes.find(x=>x.instituicaoId===r.instId && x.tipoId===r.tipoId);
+      if(!cert){ cert = {id:uid(), instituicaoId:r.instId, tipoId:r.tipoId, ultimaRenovacao:'', proximoVencimento:''}; state.certidoes.push(cert); }
+      if(r.ultimaRenovacao) cert.ultimaRenovacao = r.ultimaRenovacao;
+      if(r.proximoVencimento) cert.proximoVencimento = r.proximoVencimento;
+      count++;
+    });
+    scheduleSave(); close(); render();
+    toast(`${count} certidão(ões) importada(s).`);
   };
 }
 
