@@ -542,7 +542,7 @@ async function loadState(){
     state = res.data ? Object.assign(defaultState(), res.data) : defaultState();
     if(!state.membros || !state.membros.length) state.membros = defaultState().membros;
     if(!state.tiposTarefa || !state.tiposTarefa.length) state.tiposTarefa = defaultState().tiposTarefa;
-    state.tarefas.forEach(t=>{ if(typeof t.lida === 'undefined') t.lida = true; });
+    state.tarefas.forEach(t=>{ if(typeof t.lida === 'undefined') t.lida = false; });
     if(!res.data) await persist(true);
     setSaveState('ok');
   }catch(e){
@@ -1579,8 +1579,8 @@ function openTaskModal(taskId){
     t.status = curStatus;
 
     if(isNew || t.responsavelId !== originalResponsavelId){
-      // tarefa nova, ou responsável mudou: fica "não lida" a não ser que o próprio responsável seja quem está lançando/reatribuindo
-      t.lida = !!(me && t.responsavelId === me.id);
+      // tarefa nova, ou responsável mudou: sempre nasce como "não lida" — só vira lida quando alguém efetivamente abre a tarefa
+      t.lida = false;
     }
 
     if(querRecorrente){
