@@ -355,7 +355,8 @@ const PALETTE = ['#2f6f6a','#a8452f','#8a6d3b','#4a5a8a','#6a4a7a'];
 function defaultState(){
   const instituicoes = [1,2,3,4,5].map((n,i)=>({
     id: uid(), nome: `Instituição ${n}`, cor: PALETTE[i % PALETTE.length],
-    projetos: [{id: uid(), nome: 'Projeto principal', sigla: `PROJ-${n}`}]
+    projetos: [{id: uid(), nome: 'Projeto principal', sigla: `PROJ-${n}`}],
+    excluirIndicadores: false
   }));
   const certidaoTipos = [
     'Certidão Divida Ativa da União','Certidão Dívida Ativa Estadual','Certidão Débitos Municipais',
@@ -585,6 +586,7 @@ async function loadState(){
       if(typeof t.criadoEm === 'undefined') t.criadoEm = null;
     });
     state.membros.forEach(m=>{ if(typeof m.whatsapp === 'undefined') m.whatsapp = ''; if(typeof m.callmebotApiKey === 'undefined') m.callmebotApiKey = ''; });
+    state.instituicoes.forEach(i=>{ if(typeof i.excluirIndicadores === 'undefined') i.excluirIndicadores = false; });
     state.certidaoTipos.forEach(ct=>{ if(typeof ct.notificarApenasNoDia === 'undefined') ct.notificarApenasNoDia = false; });
     if(typeof state.notifCertidaoMembroId === 'undefined') state.notifCertidaoMembroId = null;
     if(!res.data) await persist(true);
@@ -684,35 +686,35 @@ function renderTabs(){
   nav.querySelectorAll('button').forEach(b=>b.onclick=()=>{ activeTab=b.dataset.tab; selectedTaskIds.clear(); render(); });
 }
 
-function countCertAlerts(){
-  let n=0;
+function computeCertStats(){
+  let vencidas=0, vencendo=0;
   for(const inst of state.instituicoes){
+    if(inst.excluirIndicadores) continue;
     for(const tipo of state.certidaoTipos){
       const c = state.certidoes.find(x=>x.instituicaoId===inst.id && x.tipoId===tipo.id);
       const du = c ? daysUntil(c.proximoVencimento) : null;
-      if(du===null || du<=30) n++;
+      if(du===null) continue; // sem data: não entra nos indicadores
+      if(du<0) vencidas++;
+      else if(du<=30) vencendo++;
     }
   }
-  return n;
+  return {vencidas, vencendo};
+}
+
+function countCertAlerts(){
+  const s = computeCertStats();
+  return s.vencidas + s.vencendo;
 }
 
 function renderBanner(){
   const b = document.getElementById('banner');
   const pendentes = state.tarefas.filter(t=>t.status!=='concluido').length;
   const atrasadas = state.tarefas.filter(t=>t.status!=='concluido' && t.prazo && daysUntil(t.prazo)<0).length;
-  let vencidas=0, vencendo=0;
-  for(const inst of state.instituicoes){
-    for(const tipo of state.certidaoTipos){
-      const c = state.certidoes.find(x=>x.instituicaoId===inst.id && x.tipoId===tipo.id);
-      const du = c ? daysUntil(c.proximoVencimento) : null;
-      if(du===null || du<0) vencidas++;
-      else if(du<=30) vencendo++;
-    }
-  }
+  const {vencidas, vencendo} = computeCertStats();
   b.innerHTML = `
     <div class="cell"><div class="num">${pendentes}</div><div class="lbl">Tarefas pendentes</div></div>
     <div class="cell ${atrasadas?'bad':''}"><div class="num">${atrasadas}</div><div class="lbl">Tarefas atrasadas</div></div>
-    <div class="cell ${vencidas?'bad':''}"><div class="num">${vencidas}</div><div class="lbl">Certidões vencidas/sem data</div></div>
+    <div class="cell ${vencidas?'bad':''}"><div class="num">${vencidas}</div><div class="lbl">Certidões vencidas</div></div>
     <div class="cell ${vencendo?'warn':''}"><div class="num">${vencendo}</div><div class="lbl">Vencendo em 30 dias</div></div>
   `;
 }
@@ -786,6 +788,11 @@ function renderTarefas(c){
   } else {
     renderTarefasBoard(c, list);
   }
+
+  const footer = document.createElement('div');
+  footer.style.cssText = 'text-align:center;padding:16px 0 4px;font-size:12px;color:var(--muted);font-family:var(--font-mono);';
+  footer.textContent = `Total de tarefas cadastradas: ${state.tarefas.length}`;
+  c.appendChild(footer);
 }
 
 function statusColorInfo(t){
@@ -1340,6 +1347,9 @@ function renderConfig(c){
       <div class="cfg-row">
         <span class="inst-swatch" style="background:${inst.cor}"></span>
         <input value="${escapeAttr(inst.nome)}" data-inst="${inst.id}" class="instName">
+        <label style="display:flex;align-items:center;gap:5px;font-size:11px;color:var(--muted);white-space:nowrap;text-transform:none;">
+          <input type="checkbox" class="instExcluir" data-inst="${inst.id}" ${inst.excluirIndicadores?'checked':''}> não contar nos indicadores
+        </label>
         <button class="icon-btn addProj" data-inst="${inst.id}" title="Adicionar projeto">＋ projeto</button>
         <button class="icon-btn delInst" data-inst="${inst.id}" title="Remover instituição">✕</button>
       </div>
@@ -1391,14 +1401,36 @@ function renderConfig(c){
 
   // Tipos de tarefa
   const s2b = document.createElement('div'); s2b.className='cfg-section';
-  s2b.innerHTML = `<h3>Tipos de tarefa</h3><div class="hint">Opções que aparecem no campo "Tipo" ao criar uma tarefa.</div>`;
+  s2b.innerHTML = `<h3>Tipos de tarefa</h3><div class="hint">Opções que aparecem no campo "Tipo" ao criar uma tarefa. Arraste pelo ⠿ para reordenar — a ordem aqui é a ordem no formulário de tarefa.</div>`;
   const list2b = document.createElement('div'); list2b.className='cfg-list';
   state.tiposTarefa.forEach((tipo, idx)=>{
     const row = document.createElement('div'); row.className='cfg-row';
+    row.draggable = true;
+    row.dataset.dragIdx = idx;
+    row.style.cursor = 'default';
     row.innerHTML = `
+      <span class="drag-handle" title="Arraste para reordenar" style="cursor:grab;color:var(--muted);padding:0 2px;user-select:none;">⠿</span>
       <input value="${escapeAttr(tipo)}" data-idx="${idx}" class="tipoTarefaNome">
       <button class="icon-btn delTipoTarefa" data-idx="${idx}">✕</button>
     `;
+    row.addEventListener('dragstart', e=>{
+      e.dataTransfer.setData('text/plain', String(idx));
+      e.dataTransfer.effectAllowed = 'move';
+      row.style.opacity = '0.5';
+    });
+    row.addEventListener('dragend', ()=>{ row.style.opacity = '1'; });
+    row.addEventListener('dragover', e=>{ e.preventDefault(); e.dataTransfer.dropEffect = 'move'; row.style.background = 'var(--paper-dim)'; });
+    row.addEventListener('dragleave', ()=>{ row.style.background = ''; });
+    row.addEventListener('drop', e=>{
+      e.preventDefault();
+      row.style.background = '';
+      const fromIdx = parseInt(e.dataTransfer.getData('text/plain'));
+      const toIdx = parseInt(row.dataset.dragIdx);
+      if(isNaN(fromIdx) || fromIdx===toIdx) return;
+      const item = state.tiposTarefa.splice(fromIdx, 1)[0];
+      state.tiposTarefa.splice(toIdx, 0, item);
+      scheduleSave(); render();
+    });
     list2b.appendChild(row);
   });
   s2b.appendChild(list2b);
@@ -1447,6 +1479,7 @@ function renderConfig(c){
 
   // wire events (debounced text inputs, immediate for deletes)
   wrap.querySelectorAll('.instName').forEach(inp=> inp.oninput = e=>{ instById(e.target.dataset.inst).nome = e.target.value; scheduleSave(); });
+  wrap.querySelectorAll('.instExcluir').forEach(inp=> inp.onchange = e=>{ instById(e.target.dataset.inst).excluirIndicadores = e.target.checked; scheduleSave(); render(); });
   wrap.querySelectorAll('.projSigla').forEach(inp=> inp.oninput = e=>{ projById(e.target.dataset.inst, e.target.dataset.proj).sigla = e.target.value; scheduleSave(); });
   wrap.querySelectorAll('.projNome').forEach(inp=> inp.oninput = e=>{ projById(e.target.dataset.inst, e.target.dataset.proj).nome = e.target.value; scheduleSave(); });
   wrap.querySelectorAll('.tipoNome').forEach(inp=> inp.oninput = e=>{ state.certidaoTipos.find(t=>t.id===e.target.dataset.tipo).nome = e.target.value; scheduleSave(); });
