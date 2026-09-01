@@ -582,6 +582,7 @@ async function loadState(){
         delete t.lida; delete t.lidaEm;
       }
       if(!Array.isArray(t.chat)) t.chat = [];
+      if(typeof t.criadoEm === 'undefined') t.criadoEm = null;
     });
     state.membros.forEach(m=>{ if(typeof m.whatsapp === 'undefined') m.whatsapp = ''; if(typeof m.callmebotApiKey === 'undefined') m.callmebotApiKey = ''; });
     state.certidaoTipos.forEach(ct=>{ if(typeof ct.notificarApenasNoDia === 'undefined') ct.notificarApenasNoDia = false; });
@@ -731,8 +732,11 @@ function renderTarefas(c){
     <select id="tipoFilter"><option value="">Todos tipos</option>
       ${state.tiposTarefa.map(t=>`<option value="${t}" ${filters.tipo===t?'selected':''}>${t}</option>`).join('')}
     </select>
+    <select id="statusFilter"><option value="">Todos status</option>
+      ${STATUS_COLS.map(sc=>`<option value="${sc.id}" ${filters.status===sc.id?'selected':''}>${sc.label}</option>`).join('')}
+    </select>
     <div class="spacer"></div>
-    ${(filters.inst||filters.proj||filters.resp||filters.tipo) ? `<button class="chip-clear" id="clearFilters">limpar filtros</button>` : ''}
+    ${(filters.inst||filters.proj||filters.resp||filters.tipo||filters.status) ? `<button class="chip-clear" id="clearFilters">limpar filtros</button>` : ''}
     <div style="display:flex;gap:0;border:1px solid var(--line);border-radius:8px;overflow:hidden;">
       <button id="viewLista" style="border:none;padding:8px 12px;font-size:12.5px;font-weight:600;cursor:pointer;background:${taskViewMode==='lista'?'var(--ink)':'var(--white)'};color:${taskViewMode==='lista'?'var(--paper)':'var(--ink)'};">☰ Lista</button>
       <button id="viewQuadro" style="border:none;padding:8px 12px;font-size:12.5px;font-weight:600;cursor:pointer;background:${taskViewMode==='quadro'?'var(--ink)':'var(--white)'};color:${taskViewMode==='quadro'?'var(--paper)':'var(--ink)'};">▦ Quadro</button>
@@ -754,6 +758,7 @@ function renderTarefas(c){
   projFilterEl.onchange = e=>{ filters.proj=e.target.value; render(); };
   filterBar.querySelector('#respFilter').onchange = e=>{ filters.resp=e.target.value; render(); };
   filterBar.querySelector('#tipoFilter').onchange = e=>{ filters.tipo=e.target.value; render(); };
+  filterBar.querySelector('#statusFilter').onchange = e=>{ filters.status=e.target.value; render(); };
   const clearBtn = filterBar.querySelector('#clearFilters');
   if(clearBtn) clearBtn.onclick = ()=>{ filters={inst:'',proj:'',resp:'',status:'',tipo:''}; render(); };
   filterBar.querySelector('#viewLista').onclick = ()=>{ taskViewMode='lista'; render(); };
@@ -764,6 +769,7 @@ function renderTarefas(c){
     if(filters.proj && t.projetoId!==filters.proj) return false;
     if(filters.resp && t.responsavelId!==filters.resp) return false;
     if(filters.tipo && t.tipo!==filters.tipo) return false;
+    if(filters.status && t.status!==filters.status) return false;
     return true;
   });
 
@@ -835,6 +841,7 @@ function renderTarefasLista(c, list){
           <th style="text-align:left;padding:10px 12px;">Solicitado por</th>
           <th style="text-align:left;padding:10px 12px;">Responsável</th>
           <th style="text-align:left;padding:10px 12px;">Prazo</th>
+          <th style="text-align:left;padding:10px 12px;">Criado em</th>
           <th style="text-align:left;padding:10px 12px;">Status</th>
           <th style="text-align:left;padding:10px 12px;">Lida em</th>
         </tr>
@@ -867,6 +874,7 @@ function renderTarefasLista(c, list){
       <td style="padding:9px 12px;cursor:pointer;">${solic?escapeHtml(solic.nome):'—'}</td>
       <td style="padding:9px 12px;cursor:pointer;">${resp?escapeHtml(resp.nome):'—'}</td>
       <td style="padding:9px 12px;font-family:var(--font-mono);cursor:pointer;">${t.prazo?fmtDate(t.prazo):'—'}</td>
+      <td style="padding:9px 12px;font-family:var(--font-mono);font-size:12px;color:var(--muted);cursor:pointer;">${t.criadoEm?fmtDateTime(t.criadoEm):'—'}</td>
       <td style="padding:9px 12px;cursor:pointer;"><span class="badge ${info.cls}">${info.label}</span></td>
       <td style="padding:9px 12px;font-family:var(--font-mono);font-size:12px;color:var(--muted);cursor:pointer;">${t.ultimaLeituraEm?fmtDateTime(t.ultimaLeituraEm):'—'}</td>
     `;
@@ -1485,7 +1493,7 @@ function openTaskModal(taskId){
     id: uid(), titulo:'', tipo: state.tiposTarefa[0],
     instituicaoId: filters.inst || (state.instituicoes[0]?state.instituicoes[0].id:''),
     projetoId:'', solicitanteId:'', responsavelId:'', prazo:'', status:'afazer', descricao:'', recorrencia:null,
-    pendenteLeituraPara:null, ultimaLeituraPor:null, ultimaLeituraEm:null, chat:[]
+    pendenteLeituraPara:null, ultimaLeituraPor:null, ultimaLeituraEm:null, chat:[], criadoEm:null
   } : state.tarefas.find(x=>x.id===taskId);
   const originalStatus = isNew ? null : t.status;
   const originalResponsavelId = isNew ? null : t.responsavelId;
@@ -1701,20 +1709,38 @@ function openTaskModal(taskId){
 
   overlay.querySelector('#f_save').onclick = ()=>{
     const titulo = overlay.querySelector('#f_titulo').value.trim();
-    if(!titulo){ toast('Dê um título para a tarefa.'); return; }
+    const tipoVal = overlay.querySelector('#f_tipo').value;
     const prazo = overlay.querySelector('#f_prazo').value;
+    const instVal = instSel.value;
+    const projVal = projSel.value;
+    const solicVal = overlay.querySelector('#f_solic').value;
+    const respVal = overlay.querySelector('#f_resp').value;
+
+    const faltando = [];
+    if(!titulo) faltando.push('Título da solicitação');
+    if(!tipoVal) faltando.push('Tipo');
+    if(!prazo) faltando.push('Prazo');
+    if(!instVal) faltando.push('Instituição');
+    if(!projVal) faltando.push('Projeto');
+    if(!solicVal) faltando.push('Solicitado por');
+    if(!respVal) faltando.push('Responsável por executar');
+    if(faltando.length){
+      toast('Preencha: ' + faltando.join(', '));
+      return;
+    }
+
     const querRecorrente = recCheckbox.checked;
-    if(querRecorrente && !prazo){ toast('Tarefas recorrentes precisam de um prazo inicial.'); return; }
 
     t.titulo = titulo;
-    t.tipo = overlay.querySelector('#f_tipo').value;
+    t.tipo = tipoVal;
     t.prazo = prazo;
-    t.instituicaoId = instSel.value;
-    t.projetoId = projSel.value;
-    t.solicitanteId = overlay.querySelector('#f_solic').value;
-    t.responsavelId = overlay.querySelector('#f_resp').value;
+    t.instituicaoId = instVal;
+    t.projetoId = projVal;
+    t.solicitanteId = solicVal;
+    t.responsavelId = respVal;
     t.descricao = overlay.querySelector('#f_desc').value;
     t.status = curStatus;
+    if(isNew) t.criadoEm = new Date().toISOString();
 
     if(isNew || t.responsavelId !== originalResponsavelId){
       // tarefa nova, ou responsável mudou: sempre nasce como "não lida" — só vira lida quando alguém efetivamente abre a tarefa
@@ -1735,7 +1761,7 @@ function openTaskModal(taskId){
     if(isNew){
       filters = {inst:'',proj:'',resp:'',status:'',tipo:''};
       const resp = membroById(t.responsavelId);
-      if(resp && resp.whatsapp) apiNotify('tarefa_nova', resp);
+      if(resp && resp.whatsapp) apiNotify('tarefa_nova', resp, t.titulo);
     }
 
     scheduleSave(); close(); render();
@@ -1754,11 +1780,12 @@ function maybeGenerateNextRecurrence(t, prevStatus, newStatus){
         solicitanteId: t.solicitanteId, responsavelId: t.responsavelId,
         prazo: proximoPrazo, status: 'afazer', descricao: t.descricao,
         recorrencia: t.recorrencia,
-        pendenteLeituraPara: t.responsavelId || null, ultimaLeituraPor: null, ultimaLeituraEm: null, chat: []
+        pendenteLeituraPara: t.responsavelId || null, ultimaLeituraPor: null, ultimaLeituraEm: null, chat: [],
+        criadoEm: new Date().toISOString()
       };
       state.tarefas.push(novaTarefa);
       const resp = membroById(novaTarefa.responsavelId);
-      if(resp && resp.whatsapp) apiNotify('tarefa_nova', resp);
+      if(resp && resp.whatsapp) apiNotify('tarefa_nova', resp, novaTarefa.titulo);
     }
   }
 }
