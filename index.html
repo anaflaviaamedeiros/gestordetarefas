@@ -36,6 +36,7 @@
   }
   *{box-sizing:border-box;}
   html,body{margin:0;padding:0;}
+  html,body{height:100%;}
   body{
     background:var(--paper);
     color:var(--ink);
@@ -43,13 +44,20 @@
     font-size:15px;
     line-height:1.45;
     -webkit-font-smoothing:antialiased;
+    display:flex;
+    flex-direction:column;
   }
   ::selection{background:var(--gold-soft);}
   a{color:inherit;}
   button{font-family:inherit;cursor:pointer;}
   input,select,textarea{font-family:inherit;font-size:14px;}
 
-  #app{max-width:1180px;margin:0 auto;padding:0 20px 64px;}
+  #app{
+    max-width:1900px;width:100%;margin:0 auto;padding:0 24px 12px;box-sizing:border-box;
+    flex:1;display:flex;flex-direction:column;min-height:0;
+  }
+  header.top, nav.tabs, #banner{ flex:none; }
+  #tabContent{ flex:1; min-height:0; display:flex; flex-direction:column; overflow:hidden; }
 
   /* ---------- Header ---------- */
   header.top{
@@ -353,8 +361,11 @@ let session = null; // { token, usuario, nome }
 const PALETTE = ['#2f6f6a','#a8452f','#8a6d3b','#4a5a8a','#6a4a7a'];
 // Paleta exclusiva para identificar PESSOAS — deliberadamente distante das cores de status
 // (status usa verde=ok, dourado=atenção, terracota=vencido). Tons frios/roxos, nunca confundíveis com status.
-const USER_PALETTE = ['#3a5a9e','#7a4a9e','#2f7f9e','#1f7a8c','#5b4ab8','#8a4a7e','#3a6a5e','#4a5a7a'];
-function membroColor(m){ return (m && m.cor) ? m.cor : '#151a23'; }
+// Paleta pastel/suave para identificar PESSOAS — tons claros, ainda assim distintos entre si e
+// bem distantes da paleta de status (verde=ok, dourado=atenção, terracota=vencido).
+const USER_PALETTE = ['#C9D6EE','#E3D2EE','#C8E6E1','#C7E1E8','#D8D2F0','#EED2E4','#D2E5DC','#D6DCEE'];
+function membroColor(m){ return (m && m.cor) ? m.cor : '#eae5d8'; }
+function membroTextColor(){ return '#2b2f38'; } // texto escuro — necessário para contraste sobre fundos pastéis
 
 function defaultState(){
   const instituicoes = [1,2,3,4,5].map((n,i)=>({
@@ -385,9 +396,10 @@ function defaultState(){
 }
 
 let state = null;
-let filters = { inst:'', proj:'', resp:'', status:'', tipo:'' };
+let filters = { inst:'', proj:'', resp:'', status:'', tipo:'', busca:'' };
 let activeTab = 'tarefas';
 let taskViewMode = 'lista';
+let showArchived = false;
 let selectedTaskIds = new Set();
 let saveTimer = null;
 
@@ -502,7 +514,7 @@ function updateUserBox(){
   const av = document.getElementById('userAvatar');
   av.textContent = initials(session.nome);
   const me = currentMembro();
-  if(me) av.style.background = membroColor(me);
+  if(me){ av.style.background = membroColor(me); av.style.color = membroTextColor(); }
   document.getElementById('userName').textContent = session.nome;
 }
 
@@ -595,7 +607,7 @@ async function loadState(){
       if(typeof t.concluidoEm === 'undefined') t.concluidoEm = null;
     });
     state.membros.forEach(m=>{ if(typeof m.whatsapp === 'undefined') m.whatsapp = ''; if(typeof m.callmebotApiKey === 'undefined') m.callmebotApiKey = ''; });
-    state.membros.forEach((m,idx)=>{ if(!m.cor) m.cor = USER_PALETTE[idx % USER_PALETTE.length]; });
+    state.membros.forEach((m,idx)=>{ if(!m.cor || !USER_PALETTE.includes(m.cor)) m.cor = USER_PALETTE[idx % USER_PALETTE.length]; });
     state.instituicoes.forEach(i=>{ if(typeof i.excluirIndicadores === 'undefined') i.excluirIndicadores = false; });
     state.certidaoTipos.forEach(ct=>{ if(typeof ct.notificarApenasNoDia === 'undefined') ct.notificarApenasNoDia = false; });
     if(typeof state.notifCertidaoMembroId === 'undefined') state.notifCertidaoMembroId = null;
@@ -648,6 +660,20 @@ function membroById(id){ return state.membros.find(m=>m.id===id); }
 function currentMembro(){
   if(!session || !state) return null;
   return state.membros.find(m=>normalizeStr(m.nome)===normalizeStr(session.nome)) || null;
+}
+function avatarBadge(m){
+  if(!m) return '';
+  return `<span class="avatar" title="${escapeAttr(m.nome)}" style="background:${membroColor(m)};color:${membroTextColor()};">${initials(m.nome)}</span>`;
+}
+// Ponto único de verdade para "com quem está a pendência" — sempre grava os dois campos juntos,
+// evitando o bug de um ficar dessincronizado do outro (ex.: sigla aparecer sem a data).
+function setPendente(t, membroId){
+  t.pendenteLeituraPara = membroId || null;
+  t.pendenteDesde = membroId ? new Date().toISOString() : null;
+}
+function clearPendente(t){
+  t.pendenteLeituraPara = null;
+  t.pendenteDesde = null;
 }
 function initials(name){ return (name||'').split(' ').filter(Boolean).slice(0,2).map(w=>w[0]).join('').toUpperCase(); }
 function fmtDate(d){ if(!d) return '—'; const dt = new Date(d+'T00:00:00'); if(isNaN(dt)) return '—'; return dt.toLocaleDateString('pt-BR'); }
@@ -731,9 +757,12 @@ function renderBanner(){
 
 /* ================== RENDER: TAREFAS ================== */
 function renderTarefas(c){
+  const arquivadasCount = state.tarefas.filter(t=>t.status==='concluido').length;
+
   const filterBar = document.createElement('div');
   filterBar.className = 'filters';
   filterBar.innerHTML = `
+    <input type="text" id="searchFilter" placeholder="🔎 Buscar por título..." value="${escapeAttr(filters.busca)}" style="min-width:200px;flex:1;max-width:260px;">
     <select id="instFilter"><option value="">Todas instituições</option>
       ${state.instituicoes.map(i=>`<option value="${i.id}" ${filters.inst===i.id?'selected':''}>${escapeHtml(i.nome)}</option>`).join('')}
     </select>
@@ -744,11 +773,12 @@ function renderTarefas(c){
     <select id="tipoFilter"><option value="">Todos tipos</option>
       ${state.tiposTarefa.map(t=>`<option value="${t}" ${filters.tipo===t?'selected':''}>${t}</option>`).join('')}
     </select>
-    <select id="statusFilter"><option value="">Todos status</option>
-      ${STATUS_COLS.map(sc=>`<option value="${sc.id}" ${filters.status===sc.id?'selected':''}>${sc.label}</option>`).join('')}
-    </select>
+    ${!showArchived ? `<select id="statusFilter"><option value="">Todos status</option>
+      ${STATUS_COLS.filter(sc=>sc.id!=='concluido').map(sc=>`<option value="${sc.id}" ${filters.status===sc.id?'selected':''}>${sc.label}</option>`).join('')}
+    </select>` : ''}
     <div class="spacer"></div>
-    ${(filters.inst||filters.proj||filters.resp||filters.tipo||filters.status) ? `<button class="chip-clear" id="clearFilters">limpar filtros</button>` : ''}
+    ${(filters.inst||filters.proj||filters.resp||filters.tipo||filters.status||filters.busca) ? `<button class="chip-clear" id="clearFilters">limpar filtros</button>` : ''}
+    <button id="toggleArchive" class="btn ghost small" style="${showArchived?'background:var(--ink);color:var(--paper);':''}">🗄 ${showArchived?'Ver ativas':'Arquivadas'} (${arquivadasCount})</button>
     <div style="display:flex;gap:0;border:1px solid var(--line);border-radius:8px;overflow:hidden;">
       <button id="viewLista" style="border:none;padding:8px 12px;font-size:12.5px;font-weight:600;cursor:pointer;background:${taskViewMode==='lista'?'var(--ink)':'var(--white)'};color:${taskViewMode==='lista'?'var(--paper)':'var(--ink)'};">☰ Lista</button>
       <button id="viewQuadro" style="border:none;padding:8px 12px;font-size:12.5px;font-weight:600;cursor:pointer;background:${taskViewMode==='quadro'?'var(--ink)':'var(--white)'};color:${taskViewMode==='quadro'?'var(--paper)':'var(--ink)'};">▦ Quadro</button>
@@ -766,22 +796,37 @@ function renderTarefas(c){
   }
   refreshProjOptions();
 
+  const searchEl = filterBar.querySelector('#searchFilter');
+  searchEl.oninput = e=>{
+    filters.busca = e.target.value;
+    const cursorPos = e.target.selectionStart;
+    render();
+    requestAnimationFrame(()=>{
+      const newInput = document.getElementById('searchFilter');
+      if(newInput){ newInput.focus(); newInput.setSelectionRange(cursorPos, cursorPos); }
+    });
+  };
   instFilterEl.onchange = e=>{ filters.inst=e.target.value; filters.proj=''; render(); };
   projFilterEl.onchange = e=>{ filters.proj=e.target.value; render(); };
   filterBar.querySelector('#respFilter').onchange = e=>{ filters.resp=e.target.value; render(); };
   filterBar.querySelector('#tipoFilter').onchange = e=>{ filters.tipo=e.target.value; render(); };
-  filterBar.querySelector('#statusFilter').onchange = e=>{ filters.status=e.target.value; render(); };
+  const statusFilterEl = filterBar.querySelector('#statusFilter');
+  if(statusFilterEl) statusFilterEl.onchange = e=>{ filters.status=e.target.value; render(); };
   const clearBtn = filterBar.querySelector('#clearFilters');
-  if(clearBtn) clearBtn.onclick = ()=>{ filters={inst:'',proj:'',resp:'',status:'',tipo:''}; render(); };
+  if(clearBtn) clearBtn.onclick = ()=>{ filters={inst:'',proj:'',resp:'',status:'',tipo:'',busca:''}; render(); };
+  filterBar.querySelector('#toggleArchive').onclick = ()=>{ showArchived = !showArchived; filters.status=''; render(); };
   filterBar.querySelector('#viewLista').onclick = ()=>{ taskViewMode='lista'; render(); };
   filterBar.querySelector('#viewQuadro').onclick = ()=>{ taskViewMode='quadro'; render(); };
 
   let list = state.tarefas.filter(t=>{
+    if(showArchived){ if(t.status!=='concluido') return false; }
+    else { if(t.status==='concluido') return false; }
     if(filters.inst && t.instituicaoId!==filters.inst) return false;
     if(filters.proj && t.projetoId!==filters.proj) return false;
     if(filters.resp && t.responsavelId!==filters.resp) return false;
     if(filters.tipo && t.tipo!==filters.tipo) return false;
     if(filters.status && t.status!==filters.status) return false;
+    if(filters.busca && !normalizeStr(t.titulo).includes(normalizeStr(filters.busca))) return false;
     return true;
   });
 
@@ -793,14 +838,18 @@ function renderTarefas(c){
     return;
   }
 
+  const scrollArea = document.createElement('div');
+  scrollArea.style.cssText = 'flex:1;min-height:0;overflow-y:auto;';
+  c.appendChild(scrollArea);
+
   if(taskViewMode==='lista'){
-    renderTarefasLista(c, list);
+    renderTarefasLista(scrollArea, list);
   } else {
-    renderTarefasBoard(c, list);
+    renderTarefasBoard(scrollArea, list);
   }
 
   const footer = document.createElement('div');
-  footer.style.cssText = 'text-align:center;padding:16px 0 4px;font-size:12px;color:var(--muted);font-family:var(--font-mono);';
+  footer.style.cssText = 'flex:none;text-align:center;padding:10px 0 2px;font-size:12px;color:var(--muted);font-family:var(--font-mono);';
   footer.textContent = `Total de tarefas cadastradas: ${state.tarefas.length}`;
   c.appendChild(footer);
 }
@@ -847,22 +896,22 @@ function renderTarefasLista(c, list){
   wrap.style.borderRadius='10px';
   const allSelected = visibleIds.length>0 && visibleIds.every(id=>selectedTaskIds.has(id));
   wrap.innerHTML = `
-    <table style="width:100%;border-collapse:collapse;font-size:13px;background:var(--white);min-width:860px;">
+    <table style="width:100%;border-collapse:collapse;font-size:13px;background:var(--white);min-width:1200px;">
       <thead>
         <tr style="background:var(--paper-dim);">
-          <th style="padding:10px 8px;width:32px;"><input type="checkbox" id="selectAllTasks" ${allSelected?'checked':''}></th>
-          <th style="text-align:left;padding:10px 12px;">Tarefa</th>
-          <th style="text-align:left;padding:10px 12px;">Tipo</th>
-          <th style="text-align:left;padding:10px 12px;">Instituição</th>
-          <th style="text-align:left;padding:10px 12px;">Projeto</th>
-          <th style="text-align:left;padding:10px 12px;">Solicitado por</th>
-          <th style="text-align:left;padding:10px 12px;">Responsável</th>
-          <th style="text-align:left;padding:10px 12px;">Pendente com</th>
-          <th style="text-align:left;padding:10px 12px;">Prazo</th>
-          <th style="text-align:left;padding:10px 12px;">Criado em</th>
-          <th style="text-align:left;padding:10px 12px;">Status</th>
-          <th style="text-align:left;padding:10px 12px;">Data de conclusão</th>
-          <th style="text-align:left;padding:10px 12px;">Lida em</th>
+          <th style="position:sticky;top:0;background:var(--paper-dim);padding:10px 8px;width:32px;z-index:1;"><input type="checkbox" id="selectAllTasks" ${allSelected?'checked':''}></th>
+          <th style="position:sticky;top:0;background:var(--paper-dim);text-align:left;padding:10px 12px;z-index:1;">Status</th>
+          <th style="position:sticky;top:0;background:var(--paper-dim);text-align:left;padding:10px 12px;z-index:1;">Criado</th>
+          <th style="position:sticky;top:0;background:var(--paper-dim);text-align:left;padding:10px 12px;z-index:1;">Tarefa</th>
+          <th style="position:sticky;top:0;background:var(--paper-dim);text-align:left;padding:10px 12px;z-index:1;">Tipo</th>
+          <th style="position:sticky;top:0;background:var(--paper-dim);text-align:left;padding:10px 12px;z-index:1;">Instituição</th>
+          <th style="position:sticky;top:0;background:var(--paper-dim);text-align:left;padding:10px 12px;z-index:1;">Projeto</th>
+          <th style="position:sticky;top:0;background:var(--paper-dim);text-align:left;padding:10px 12px;z-index:1;">Solicitado por</th>
+          <th style="position:sticky;top:0;background:var(--paper-dim);text-align:left;padding:10px 12px;z-index:1;">Responsável</th>
+          <th style="position:sticky;top:0;background:var(--paper-dim);text-align:left;padding:10px 12px;z-index:1;">Prazo</th>
+          <th style="position:sticky;top:0;background:var(--paper-dim);text-align:left;padding:10px 12px;z-index:1;">Lida em</th>
+          <th style="position:sticky;top:0;background:var(--paper-dim);text-align:left;padding:10px 12px;z-index:1;">Pendente com</th>
+          <th style="position:sticky;top:0;background:var(--paper-dim);text-align:left;padding:10px 12px;z-index:1;">Conclusão</th>
         </tr>
       </thead>
       <tbody></tbody>
@@ -887,18 +936,18 @@ function renderTarefasLista(c, list){
     if(checked) tr.style.background='var(--gold-soft)';
     tr.innerHTML = `
       <td style="padding:9px 8px;text-align:center;"><input type="checkbox" class="rowCheck" data-id="${t.id}" ${checked?'checked':''}></td>
+      <td style="padding:9px 12px;cursor:pointer;"><span class="badge ${info.cls}">${info.label}</span></td>
+      <td style="padding:9px 12px;font-family:var(--font-mono);font-size:12px;color:var(--muted);cursor:pointer;">${t.criadoEm?fmtDateTime(t.criadoEm):'—'}</td>
       <td style="padding:9px 12px;font-weight:${t.pendenteLeituraPara?700:400};cursor:pointer;">${t.pendenteLeituraPara?'<span class="unread-dot"></span>':''}${t.recorrencia?'🔁 ':''}${escapeHtml(t.titulo)}</td>
       <td style="padding:9px 12px;cursor:pointer;">${escapeHtml(t.tipo||'Outro')}</td>
       <td style="padding:9px 12px;cursor:pointer;">${inst?escapeHtml(inst.nome):'—'}</td>
       <td style="padding:9px 12px;cursor:pointer;">${proj?escapeHtml(proj.sigla||proj.nome):'—'}</td>
-      <td style="padding:9px 12px;cursor:pointer;">${solic?escapeHtml(solic.nome):'—'}</td>
-      <td style="padding:9px 12px;cursor:pointer;">${resp?`<span style="display:inline-flex;align-items:center;gap:6px;"><span class="avatar" style="background:${membroColor(resp)};">${initials(resp.nome)}</span>${escapeHtml(resp.nome)}</span>`:'—'}</td>
-      <td style="padding:9px 12px;cursor:pointer;">${pendente?`<span style="display:inline-flex;align-items:center;gap:6px;"><span class="avatar" style="background:${membroColor(pendente)};">${initials(pendente.nome)}</span><span style="font-family:var(--font-mono);font-size:11.5px;color:var(--muted);">${t.pendenteDesde?fmtDate(t.pendenteDesde):'—'}</span></span>`:'<span style="color:var(--muted);">—</span>'}</td>
+      <td style="padding:9px 12px;cursor:pointer;">${solic?avatarBadge(solic):'—'}</td>
+      <td style="padding:9px 12px;cursor:pointer;">${resp?avatarBadge(resp):'—'}</td>
       <td style="padding:9px 12px;font-family:var(--font-mono);cursor:pointer;">${t.prazo?fmtDate(t.prazo):'—'}</td>
-      <td style="padding:9px 12px;font-family:var(--font-mono);font-size:12px;color:var(--muted);cursor:pointer;">${t.criadoEm?fmtDateTime(t.criadoEm):'—'}</td>
-      <td style="padding:9px 12px;cursor:pointer;"><span class="badge ${info.cls}">${info.label}</span></td>
-      <td style="padding:9px 12px;font-family:var(--font-mono);font-size:12px;color:var(--muted);cursor:pointer;">${t.concluidoEm?fmtDateTime(t.concluidoEm):'—'}</td>
       <td style="padding:9px 12px;font-family:var(--font-mono);font-size:12px;color:var(--muted);cursor:pointer;">${t.ultimaLeituraEm?fmtDateTime(t.ultimaLeituraEm):'—'}</td>
+      <td style="padding:9px 12px;cursor:pointer;">${pendente?`<span style="display:inline-flex;align-items:center;gap:6px;">${avatarBadge(pendente)}<span style="font-family:var(--font-mono);font-size:11.5px;color:var(--muted);">${t.pendenteDesde?fmtDate(t.pendenteDesde):'—'}</span></span>`:'<span style="color:var(--muted);">—</span>'}</td>
+      <td style="padding:9px 12px;font-family:var(--font-mono);font-size:12px;color:var(--muted);cursor:pointer;">${t.concluidoEm?fmtDateTime(t.concluidoEm):'—'}</td>
     `;
     tr.querySelectorAll('td:not(:first-child)').forEach(td=> td.onclick = ()=>openTaskModal(t.id));
     tr.querySelector('.rowCheck').onclick = (e)=>{
@@ -947,7 +996,7 @@ function renderCard(t){
     <h4 style="font-weight:${t.pendenteLeituraPara?800:500};">${t.pendenteLeituraPara?'<span class="unread-dot"></span>':''}${t.recorrencia?'🔁 ':''}${escapeHtml(t.titulo)}</h4>
     <div class="meta">
       <div class="who" title="Solicitado por ${solic?escapeHtml(solic.nome):'—'} · Responsável ${resp?escapeHtml(resp.nome):'—'}">
-        <span class="avatar" style="${resp?`background:${membroColor(resp)};`:''}">${resp?initials(resp.nome):'?'}</span>
+        <span class="avatar" style="${resp?`background:${membroColor(resp)};color:${membroTextColor()};`:''}">${resp?initials(resp.nome):'?'}</span>
         <span>${resp?escapeHtml(resp.nome.split(' ')[0]):'sem responsável'}</span>
       </div>
       <span class="due ${dueClass}">${t.prazo? fmtDate(t.prazo) : 'sem prazo'}</span>
@@ -1463,7 +1512,7 @@ function renderConfig(c){
   state.membros.forEach(m=>{
     const row = document.createElement('div'); row.className='cfg-row'; row.style.flexWrap='wrap';
     row.innerHTML = `
-      <span class="avatar" style="background:${membroColor(m)};">${initials(m.nome)}</span>
+      <span class="avatar" style="background:${membroColor(m)};color:${membroTextColor()};">${initials(m.nome)}</span>
       <input value="${escapeAttr(m.nome)}" data-membro="${m.id}" class="membroNome" style="flex:1;min-width:110px;">
       <input value="${escapeAttr(m.whatsapp||'')}" data-membro="${m.id}" class="membroWhatsapp" placeholder="WhatsApp: 5541999999999" style="flex:1;min-width:150px;">
       <input value="${escapeAttr(m.callmebotApiKey||'')}" data-membro="${m.id}" class="membroApiKey" placeholder="Chave CallMeBot" style="flex:1;min-width:120px;">
@@ -1550,8 +1599,7 @@ function openTaskModal(taskId){
 
   // marcar como lida assim que a pessoa "aguardada" (responsável OU solicitante, dependendo do momento) abre a tarefa
   if(!isNew && me && t.pendenteLeituraPara===me.id){
-    t.pendenteLeituraPara = null;
-    t.pendenteDesde = null;
+    clearPendente(t);
     t.ultimaLeituraPor = me.id;
     t.ultimaLeituraEm = new Date().toISOString();
     scheduleSave();
@@ -1704,7 +1752,7 @@ function openTaskModal(taskId){
         const cor = autorMembro ? membroColor(autorMembro) : 'var(--ink)';
         return `
         <div style="background:var(--paper-dim);border-radius:8px;padding:7px 10px;display:flex;gap:8px;align-items:flex-start;">
-          <span class="avatar" style="background:${cor};flex:none;">${initials(msg.autorNome||'—')}</span>
+          <span class="avatar" style="background:${cor};color:${membroTextColor()};flex:none;">${initials(msg.autorNome||'—')}</span>
           <div>
             <div style="font-size:11.5px;font-weight:700;color:var(--ink);">${escapeHtml(msg.autorNome||'—')} <span style="font-weight:400;color:var(--muted);">· ${fmtDateTime(msg.criadoEm)}</span></div>
             <div style="font-size:13px;margin-top:2px;">${escapeHtml(msg.texto)}</div>
@@ -1726,15 +1774,13 @@ function openTaskModal(taskId){
 
       // se quem escreveu é o responsável levantando dúvida -> avisa o solicitante
       if(autorId && autorId===t.responsavelId && t.solicitanteId){
-        t.pendenteLeituraPara = t.solicitanteId;
-        t.pendenteDesde = new Date().toISOString();
+        setPendente(t, t.solicitanteId);
         const solic = membroById(t.solicitanteId);
         if(solic && solic.whatsapp) apiNotify('duvida_tarefa', solic, t.titulo);
       }
       // se quem escreveu é o solicitante respondendo -> avisa o responsável
       else if(autorId && autorId===t.solicitanteId && t.responsavelId){
-        t.pendenteLeituraPara = t.responsavelId;
-        t.pendenteDesde = new Date().toISOString();
+        setPendente(t, t.responsavelId);
         const resp = membroById(t.responsavelId);
         if(resp && resp.whatsapp) apiNotify('duvida_respondida', resp, t.titulo);
       }
@@ -1809,8 +1855,7 @@ function openTaskModal(taskId){
 
     if(isNew || t.responsavelId !== originalResponsavelId){
       // tarefa nova, ou responsável mudou: sempre nasce como "não lida" — só vira lida quando alguém efetivamente abre a tarefa
-      t.pendenteLeituraPara = t.responsavelId || null;
-      t.pendenteDesde = t.pendenteLeituraPara ? new Date().toISOString() : null;
+      setPendente(t, t.responsavelId);
     }
 
     if(querRecorrente){
@@ -1825,7 +1870,7 @@ function openTaskModal(taskId){
     maybeGenerateNextRecurrence(t, originalStatus, curStatus);
 
     if(isNew){
-      filters = {inst:'',proj:'',resp:'',status:'',tipo:''};
+      filters = {inst:'',proj:'',resp:'',status:'',tipo:'',busca:''};
       const resp = membroById(t.responsavelId);
       if(resp && resp.whatsapp) apiNotify('tarefa_nova', resp, t.titulo);
     }
