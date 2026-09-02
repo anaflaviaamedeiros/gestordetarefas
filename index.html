@@ -351,6 +351,10 @@ const uid = () => Math.random().toString(36).slice(2,10);
 let session = null; // { token, usuario, nome }
 
 const PALETTE = ['#2f6f6a','#a8452f','#8a6d3b','#4a5a8a','#6a4a7a'];
+// Paleta exclusiva para identificar PESSOAS — deliberadamente distante das cores de status
+// (status usa verde=ok, dourado=atenção, terracota=vencido). Tons frios/roxos, nunca confundíveis com status.
+const USER_PALETTE = ['#3a5a9e','#7a4a9e','#2f7f9e','#1f7a8c','#5b4ab8','#8a4a7e','#3a6a5e','#4a5a7a'];
+function membroColor(m){ return (m && m.cor) ? m.cor : '#151a23'; }
 
 function defaultState(){
   const instituicoes = [1,2,3,4,5].map((n,i)=>({
@@ -366,9 +370,9 @@ function defaultState(){
   const tiposTarefa = ['Contrato','Cotação','Pagamento','Documentação','Certidão','Prestação de Contas','Outro'];
   return {
     membros: [
-      {id:'af', nome:'Ana Flávia', whatsapp:'', callmebotApiKey:''},
-      {id:'sz', nome:'Suzana', whatsapp:'', callmebotApiKey:''},
-      {id:'ac', nome:'Ana Cristina', whatsapp:'', callmebotApiKey:''}
+      {id:'af', nome:'Ana Flávia', whatsapp:'', callmebotApiKey:'', cor: USER_PALETTE[0]},
+      {id:'sz', nome:'Suzana', whatsapp:'', callmebotApiKey:'', cor: USER_PALETTE[1]},
+      {id:'ac', nome:'Ana Cristina', whatsapp:'', callmebotApiKey:'', cor: USER_PALETTE[2]}
     ],
     instituicoes,
     certidaoTipos,
@@ -495,7 +499,10 @@ function updateUserBox(){
   const box = document.getElementById('userBox');
   if(!session){ box.style.display='none'; return; }
   box.style.display='flex';
-  document.getElementById('userAvatar').textContent = initials(session.nome);
+  const av = document.getElementById('userAvatar');
+  av.textContent = initials(session.nome);
+  const me = currentMembro();
+  if(me) av.style.background = membroColor(me);
   document.getElementById('userName').textContent = session.nome;
 }
 
@@ -584,8 +591,11 @@ async function loadState(){
       }
       if(!Array.isArray(t.chat)) t.chat = [];
       if(typeof t.criadoEm === 'undefined') t.criadoEm = null;
+      if(typeof t.pendenteDesde === 'undefined') t.pendenteDesde = t.pendenteLeituraPara ? (t.criadoEm || null) : null;
+      if(typeof t.concluidoEm === 'undefined') t.concluidoEm = null;
     });
     state.membros.forEach(m=>{ if(typeof m.whatsapp === 'undefined') m.whatsapp = ''; if(typeof m.callmebotApiKey === 'undefined') m.callmebotApiKey = ''; });
+    state.membros.forEach((m,idx)=>{ if(!m.cor) m.cor = USER_PALETTE[idx % USER_PALETTE.length]; });
     state.instituicoes.forEach(i=>{ if(typeof i.excluirIndicadores === 'undefined') i.excluirIndicadores = false; });
     state.certidaoTipos.forEach(ct=>{ if(typeof ct.notificarApenasNoDia === 'undefined') ct.notificarApenasNoDia = false; });
     if(typeof state.notifCertidaoMembroId === 'undefined') state.notifCertidaoMembroId = null;
@@ -847,9 +857,11 @@ function renderTarefasLista(c, list){
           <th style="text-align:left;padding:10px 12px;">Projeto</th>
           <th style="text-align:left;padding:10px 12px;">Solicitado por</th>
           <th style="text-align:left;padding:10px 12px;">Responsável</th>
+          <th style="text-align:left;padding:10px 12px;">Pendente com</th>
           <th style="text-align:left;padding:10px 12px;">Prazo</th>
           <th style="text-align:left;padding:10px 12px;">Criado em</th>
           <th style="text-align:left;padding:10px 12px;">Status</th>
+          <th style="text-align:left;padding:10px 12px;">Data de conclusão</th>
           <th style="text-align:left;padding:10px 12px;">Lida em</th>
         </tr>
       </thead>
@@ -867,6 +879,7 @@ function renderTarefasLista(c, list){
     const proj = inst ? projById(inst.id, t.projetoId) : null;
     const resp = membroById(t.responsavelId);
     const solic = membroById(t.solicitanteId);
+    const pendente = t.pendenteLeituraPara ? membroById(t.pendenteLeituraPara) : null;
     const info = statusColorInfo(t);
     const checked = selectedTaskIds.has(t.id);
     const tr = document.createElement('tr');
@@ -875,14 +888,16 @@ function renderTarefasLista(c, list){
     tr.innerHTML = `
       <td style="padding:9px 8px;text-align:center;"><input type="checkbox" class="rowCheck" data-id="${t.id}" ${checked?'checked':''}></td>
       <td style="padding:9px 12px;font-weight:${t.pendenteLeituraPara?700:400};cursor:pointer;">${t.pendenteLeituraPara?'<span class="unread-dot"></span>':''}${t.recorrencia?'🔁 ':''}${escapeHtml(t.titulo)}</td>
-      <td style="padding:9px 12px;cursor:pointer;"><span class="tag type">${escapeHtml(t.tipo||'Outro')}</span></td>
+      <td style="padding:9px 12px;cursor:pointer;">${escapeHtml(t.tipo||'Outro')}</td>
       <td style="padding:9px 12px;cursor:pointer;">${inst?escapeHtml(inst.nome):'—'}</td>
       <td style="padding:9px 12px;cursor:pointer;">${proj?escapeHtml(proj.sigla||proj.nome):'—'}</td>
       <td style="padding:9px 12px;cursor:pointer;">${solic?escapeHtml(solic.nome):'—'}</td>
-      <td style="padding:9px 12px;cursor:pointer;">${resp?escapeHtml(resp.nome):'—'}</td>
+      <td style="padding:9px 12px;cursor:pointer;">${resp?`<span style="display:inline-flex;align-items:center;gap:6px;"><span class="avatar" style="background:${membroColor(resp)};">${initials(resp.nome)}</span>${escapeHtml(resp.nome)}</span>`:'—'}</td>
+      <td style="padding:9px 12px;cursor:pointer;">${pendente?`<span style="display:inline-flex;align-items:center;gap:6px;"><span class="avatar" style="background:${membroColor(pendente)};">${initials(pendente.nome)}</span><span style="font-family:var(--font-mono);font-size:11.5px;color:var(--muted);">${t.pendenteDesde?fmtDate(t.pendenteDesde):'—'}</span></span>`:'<span style="color:var(--muted);">—</span>'}</td>
       <td style="padding:9px 12px;font-family:var(--font-mono);cursor:pointer;">${t.prazo?fmtDate(t.prazo):'—'}</td>
       <td style="padding:9px 12px;font-family:var(--font-mono);font-size:12px;color:var(--muted);cursor:pointer;">${t.criadoEm?fmtDateTime(t.criadoEm):'—'}</td>
       <td style="padding:9px 12px;cursor:pointer;"><span class="badge ${info.cls}">${info.label}</span></td>
+      <td style="padding:9px 12px;font-family:var(--font-mono);font-size:12px;color:var(--muted);cursor:pointer;">${t.concluidoEm?fmtDateTime(t.concluidoEm):'—'}</td>
       <td style="padding:9px 12px;font-family:var(--font-mono);font-size:12px;color:var(--muted);cursor:pointer;">${t.ultimaLeituraEm?fmtDateTime(t.ultimaLeituraEm):'—'}</td>
     `;
     tr.querySelectorAll('td:not(:first-child)').forEach(td=> td.onclick = ()=>openTaskModal(t.id));
@@ -932,7 +947,7 @@ function renderCard(t){
     <h4 style="font-weight:${t.pendenteLeituraPara?800:500};">${t.pendenteLeituraPara?'<span class="unread-dot"></span>':''}${t.recorrencia?'🔁 ':''}${escapeHtml(t.titulo)}</h4>
     <div class="meta">
       <div class="who" title="Solicitado por ${solic?escapeHtml(solic.nome):'—'} · Responsável ${resp?escapeHtml(resp.nome):'—'}">
-        <span class="avatar">${resp?initials(resp.nome):'?'}</span>
+        <span class="avatar" style="${resp?`background:${membroColor(resp)};`:''}">${resp?initials(resp.nome):'?'}</span>
         <span>${resp?escapeHtml(resp.nome.split(' ')[0]):'sem responsável'}</span>
       </div>
       <span class="due ${dueClass}">${t.prazo? fmtDate(t.prazo) : 'sem prazo'}</span>
@@ -1448,7 +1463,7 @@ function renderConfig(c){
   state.membros.forEach(m=>{
     const row = document.createElement('div'); row.className='cfg-row'; row.style.flexWrap='wrap';
     row.innerHTML = `
-      <span class="avatar">${initials(m.nome)}</span>
+      <span class="avatar" style="background:${membroColor(m)};">${initials(m.nome)}</span>
       <input value="${escapeAttr(m.nome)}" data-membro="${m.id}" class="membroNome" style="flex:1;min-width:110px;">
       <input value="${escapeAttr(m.whatsapp||'')}" data-membro="${m.id}" class="membroWhatsapp" placeholder="WhatsApp: 5541999999999" style="flex:1;min-width:150px;">
       <input value="${escapeAttr(m.callmebotApiKey||'')}" data-membro="${m.id}" class="membroApiKey" placeholder="Chave CallMeBot" style="flex:1;min-width:120px;">
@@ -1460,7 +1475,7 @@ function renderConfig(c){
   const addMembroBtn = document.createElement('button');
   addMembroBtn.className='btn ghost small'; addMembroBtn.style.marginTop='10px';
   addMembroBtn.textContent='+ Adicionar pessoa';
-  addMembroBtn.onclick = ()=>{ state.membros.push({id:uid(), nome:'Novo membro', whatsapp:'', callmebotApiKey:''}); scheduleSave(); render(); };
+  addMembroBtn.onclick = ()=>{ state.membros.push({id:uid(), nome:'Novo membro', whatsapp:'', callmebotApiKey:'', cor: USER_PALETTE[state.membros.length % USER_PALETTE.length]}); scheduleSave(); render(); };
   s3.appendChild(addMembroBtn);
   wrap.appendChild(s3);
 
@@ -1526,7 +1541,8 @@ function openTaskModal(taskId){
     id: uid(), titulo:'', tipo: state.tiposTarefa[0],
     instituicaoId: filters.inst || (state.instituicoes[0]?state.instituicoes[0].id:''),
     projetoId:'', solicitanteId:'', responsavelId:'', prazo:'', status:'afazer', descricao:'', recorrencia:null,
-    pendenteLeituraPara:null, ultimaLeituraPor:null, ultimaLeituraEm:null, chat:[], criadoEm:null
+    pendenteLeituraPara:null, ultimaLeituraPor:null, ultimaLeituraEm:null, chat:[], criadoEm:null,
+    pendenteDesde:null, concluidoEm:null
   } : state.tarefas.find(x=>x.id===taskId);
   const originalStatus = isNew ? null : t.status;
   const originalResponsavelId = isNew ? null : t.responsavelId;
@@ -1535,6 +1551,7 @@ function openTaskModal(taskId){
   // marcar como lida assim que a pessoa "aguardada" (responsável OU solicitante, dependendo do momento) abre a tarefa
   if(!isNew && me && t.pendenteLeituraPara===me.id){
     t.pendenteLeituraPara = null;
+    t.pendenteDesde = null;
     t.ultimaLeituraPor = me.id;
     t.ultimaLeituraEm = new Date().toISOString();
     scheduleSave();
@@ -1682,12 +1699,18 @@ function openTaskModal(taskId){
         chatList.innerHTML = `<div class="hint" style="margin:0;">Nenhuma mensagem ainda.</div>`;
         return;
       }
-      chatList.innerHTML = t.chat.map(msg=>`
-        <div style="background:var(--paper-dim);border-radius:8px;padding:7px 10px;">
-          <div style="font-size:11.5px;font-weight:700;color:var(--ink);">${escapeHtml(msg.autorNome||'—')} <span style="font-weight:400;color:var(--muted);">· ${fmtDateTime(msg.criadoEm)}</span></div>
-          <div style="font-size:13px;margin-top:2px;">${escapeHtml(msg.texto)}</div>
+      chatList.innerHTML = t.chat.map(msg=>{
+        const autorMembro = msg.autorId ? membroById(msg.autorId) : null;
+        const cor = autorMembro ? membroColor(autorMembro) : 'var(--ink)';
+        return `
+        <div style="background:var(--paper-dim);border-radius:8px;padding:7px 10px;display:flex;gap:8px;align-items:flex-start;">
+          <span class="avatar" style="background:${cor};flex:none;">${initials(msg.autorNome||'—')}</span>
+          <div>
+            <div style="font-size:11.5px;font-weight:700;color:var(--ink);">${escapeHtml(msg.autorNome||'—')} <span style="font-weight:400;color:var(--muted);">· ${fmtDateTime(msg.criadoEm)}</span></div>
+            <div style="font-size:13px;margin-top:2px;">${escapeHtml(msg.texto)}</div>
+          </div>
         </div>
-      `).join('');
+      `;}).join('');
       chatList.scrollTop = chatList.scrollHeight;
     }
     renderChat();
@@ -1704,12 +1727,14 @@ function openTaskModal(taskId){
       // se quem escreveu é o responsável levantando dúvida -> avisa o solicitante
       if(autorId && autorId===t.responsavelId && t.solicitanteId){
         t.pendenteLeituraPara = t.solicitanteId;
+        t.pendenteDesde = new Date().toISOString();
         const solic = membroById(t.solicitanteId);
         if(solic && solic.whatsapp) apiNotify('duvida_tarefa', solic, t.titulo);
       }
       // se quem escreveu é o solicitante respondendo -> avisa o responsável
       else if(autorId && autorId===t.solicitanteId && t.responsavelId){
         t.pendenteLeituraPara = t.responsavelId;
+        t.pendenteDesde = new Date().toISOString();
         const resp = membroById(t.responsavelId);
         if(resp && resp.whatsapp) apiNotify('duvida_respondida', resp, t.titulo);
       }
@@ -1772,12 +1797,20 @@ function openTaskModal(taskId){
     t.solicitanteId = solicVal;
     t.responsavelId = respVal;
     t.descricao = overlay.querySelector('#f_desc').value;
-    t.status = curStatus;
     if(isNew) t.criadoEm = new Date().toISOString();
+
+    // Data de conclusão: registra ao entrar em "concluído", zera se for reaberta depois
+    if(curStatus==='concluido' && originalStatus!=='concluido'){
+      t.concluidoEm = new Date().toISOString();
+    } else if(curStatus!=='concluido' && originalStatus==='concluido'){
+      t.concluidoEm = null;
+    }
+    t.status = curStatus;
 
     if(isNew || t.responsavelId !== originalResponsavelId){
       // tarefa nova, ou responsável mudou: sempre nasce como "não lida" — só vira lida quando alguém efetivamente abre a tarefa
       t.pendenteLeituraPara = t.responsavelId || null;
+      t.pendenteDesde = t.pendenteLeituraPara ? new Date().toISOString() : null;
     }
 
     if(querRecorrente){
@@ -1814,7 +1847,8 @@ function maybeGenerateNextRecurrence(t, prevStatus, newStatus){
         prazo: proximoPrazo, status: 'afazer', descricao: t.descricao,
         recorrencia: t.recorrencia,
         pendenteLeituraPara: t.responsavelId || null, ultimaLeituraPor: null, ultimaLeituraEm: null, chat: [],
-        criadoEm: new Date().toISOString()
+        criadoEm: new Date().toISOString(),
+        pendenteDesde: t.responsavelId ? new Date().toISOString() : null, concluidoEm: null
       };
       state.tarefas.push(novaTarefa);
       const resp = membroById(novaTarefa.responsavelId);
@@ -1828,6 +1862,11 @@ function bulkSetStatus(newStatus){
     const t = state.tarefas.find(x=>x.id===id);
     if(!t) return;
     const prevStatus = t.status;
+    if(newStatus==='concluido' && prevStatus!=='concluido'){
+      t.concluidoEm = new Date().toISOString();
+    } else if(newStatus!=='concluido' && prevStatus==='concluido'){
+      t.concluidoEm = null;
+    }
     t.status = newStatus;
     maybeGenerateNextRecurrence(t, prevStatus, newStatus);
   });
