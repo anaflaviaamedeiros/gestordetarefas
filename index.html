@@ -703,10 +703,30 @@ function render(){
   renderBanner();
   const c = document.getElementById('tabContent');
   const fab = document.getElementById('fabAdd');
-  if(activeTab==='tarefas'){ fab.style.display='inline-flex'; fab.textContent='+ Nova tarefa'; c.innerHTML=''; renderTarefas(c); }
-  else if(activeTab==='certidoes'){ fab.style.display='none'; c.innerHTML=''; renderCertidoes(c); }
-  else if(activeTab==='links'){ fab.style.display='inline-flex'; fab.textContent='+ Novo link'; c.innerHTML=''; renderLinks(c); }
-  else { fab.style.display='none'; c.innerHTML=''; renderConfig(c); }
+  c.innerHTML = '';
+  if(activeTab==='tarefas'){
+    fab.style.display='inline-flex'; fab.textContent='+ Nova tarefa';
+    renderTarefas(c); // já cria sua própria área rolável internamente, após a barra de filtros
+  }
+  else if(activeTab==='certidoes'){
+    fab.style.display='none';
+    renderCertidoes(makeScrollArea(c));
+  }
+  else if(activeTab==='links'){
+    fab.style.display='inline-flex'; fab.textContent='+ Novo link';
+    renderLinks(makeScrollArea(c));
+  }
+  else {
+    fab.style.display='none';
+    renderConfig(makeScrollArea(c));
+  }
+}
+
+function makeScrollArea(c){
+  const scrollArea = document.createElement('div');
+  scrollArea.style.cssText = 'flex:1;min-height:0;overflow-y:auto;padding-bottom:16px;';
+  c.appendChild(scrollArea);
+  return scrollArea;
 }
 
 function renderTabs(){
