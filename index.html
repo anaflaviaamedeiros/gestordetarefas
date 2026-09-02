@@ -371,7 +371,7 @@ function defaultState(){
   const instituicoes = [1,2,3,4,5].map((n,i)=>({
     id: uid(), nome: `Instituição ${n}`, cor: PALETTE[i % PALETTE.length],
     projetos: [{id: uid(), nome: 'Projeto principal', sigla: `PROJ-${n}`}],
-    excluirIndicadores: false
+    excluirIndicadores: false, cnpj: ''
   }));
   const certidaoTipos = [
     'Certidão Divida Ativa da União','Certidão Dívida Ativa Estadual','Certidão Débitos Municipais',
@@ -608,7 +608,14 @@ async function loadState(){
     });
     state.membros.forEach(m=>{ if(typeof m.whatsapp === 'undefined') m.whatsapp = ''; if(typeof m.callmebotApiKey === 'undefined') m.callmebotApiKey = ''; });
     state.membros.forEach((m,idx)=>{ if(!m.cor || !USER_PALETTE.includes(m.cor)) m.cor = USER_PALETTE[idx % USER_PALETTE.length]; });
-    state.instituicoes.forEach(i=>{ if(typeof i.excluirIndicadores === 'undefined') i.excluirIndicadores = false; });
+    state.instituicoes.forEach(i=>{ if(typeof i.excluirIndicadores === 'undefined') i.excluirIndicadores = false; if(typeof i.cnpj === 'undefined') i.cnpj = ''; });
+    const CNPJ_CONHECIDOS = { 'abig':'45238001000107', 'ag':'10193218000163', 'icls':'24340108000191', 'itdh':'22853487000198', 'ibk':'26710944000146' };
+    state.instituicoes.forEach(i=>{
+      if(!i.cnpj){
+        const conhecido = CNPJ_CONHECIDOS[normalizeStr(i.nome)];
+        if(conhecido) i.cnpj = conhecido;
+      }
+    });
     state.certidaoTipos.forEach(ct=>{ if(typeof ct.notificarApenasNoDia === 'undefined') ct.notificarApenasNoDia = false; });
     if(typeof state.notifCertidaoMembroId === 'undefined') state.notifCertidaoMembroId = null;
     if(!res.data) await persist(true);
@@ -1421,6 +1428,23 @@ Instituição 1	Certidão do TCE	05/02/2026	05/08/2026"></textarea></div>
 function renderConfig(c){
   const wrap = document.createElement('div');
 
+  // CNPJs
+  const s0 = document.createElement('div'); s0.className='cfg-section';
+  s0.innerHTML = `<h3>CNPJs das instituições</h3><div class="hint">Copie rápido o CNPJ para emitir certidões ou fazer consultas.</div>`;
+  const list0 = document.createElement('div'); list0.className='cfg-list';
+  state.instituicoes.forEach(inst=>{
+    const row = document.createElement('div'); row.className='cfg-row';
+    row.innerHTML = `
+      <span class="inst-swatch" style="background:${inst.cor}"></span>
+      <span style="font-weight:600;min-width:70px;">${escapeHtml(inst.nome)}</span>
+      <input value="${escapeAttr(inst.cnpj||'')}" data-inst="${inst.id}" class="instCnpj" placeholder="CNPJ" style="flex:1;font-family:var(--font-mono);">
+      <button class="icon-btn copyCnpj" data-inst="${inst.id}" title="Copiar CNPJ">📋</button>
+    `;
+    list0.appendChild(row);
+  });
+  s0.appendChild(list0);
+  wrap.appendChild(s0);
+
   // Instituições
   const s1 = document.createElement('div'); s1.className='cfg-section';
   s1.innerHTML = `<h3>Instituições e projetos</h3><div class="hint">Cada instituição pode ter mais de um projeto (com sigla).</div>`;
@@ -1436,6 +1460,11 @@ function renderConfig(c){
         </label>
         <button class="icon-btn addProj" data-inst="${inst.id}" title="Adicionar projeto">＋ projeto</button>
         <button class="icon-btn delInst" data-inst="${inst.id}" title="Remover instituição">✕</button>
+      </div>
+      <div class="cfg-row" style="padding-left:20px;">
+        <label style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;white-space:nowrap;">CNPJ</label>
+        <input value="${escapeAttr(inst.cnpj||'')}" data-inst="${inst.id}" class="instCnpj" placeholder="00.000.000/0000-00" style="max-width:200px;font-family:var(--font-mono);">
+        <button class="icon-btn copyCnpj" data-inst="${inst.id}" title="Copiar CNPJ">📋</button>
       </div>
       <div class="proj-list" data-projlist="${inst.id}"></div>
     `;
@@ -1457,7 +1486,7 @@ function renderConfig(c){
   addInstBtn.className='btn ghost small'; addInstBtn.style.marginTop='10px';
   addInstBtn.textContent = '+ Adicionar instituição';
   addInstBtn.onclick = ()=>{
-    state.instituicoes.push({id:uid(), nome:'Nova instituição', cor: PALETTE[state.instituicoes.length % PALETTE.length], projetos:[{id:uid(), nome:'Projeto', sigla:'SIGLA'}]});
+    state.instituicoes.push({id:uid(), nome:'Nova instituição', cor: PALETTE[state.instituicoes.length % PALETTE.length], projetos:[{id:uid(), nome:'Projeto', sigla:'SIGLA'}], excluirIndicadores:false, cnpj:''});
     scheduleSave(); render();
   };
   s1.appendChild(addInstBtn);
@@ -1562,8 +1591,32 @@ function renderConfig(c){
   c.appendChild(wrap);
 
   // wire events (debounced text inputs, immediate for deletes)
+  wrap.querySelectorAll('.instCnpj').forEach(inp=> inp.oninput = e=>{ instById(e.target.dataset.inst).cnpj = e.target.value; scheduleSave(); });
+  wrap.querySelectorAll('.copyCnpj').forEach(btn=> btn.onclick = async e=>{
+    const inst = instById(e.target.dataset.inst);
+    const cnpj = (inst.cnpj||'').trim();
+    if(!cnpj){ toast('Nenhum CNPJ cadastrado para essa instituição.'); return; }
+    try{
+      await navigator.clipboard.writeText(cnpj);
+      toast(`CNPJ de ${inst.nome} copiado!`);
+    }catch(err){
+      toast('Não foi possível copiar automaticamente. Selecione e copie manualmente.');
+    }
+  });
   wrap.querySelectorAll('.instName').forEach(inp=> inp.oninput = e=>{ instById(e.target.dataset.inst).nome = e.target.value; scheduleSave(); });
   wrap.querySelectorAll('.instExcluir').forEach(inp=> inp.onchange = e=>{ instById(e.target.dataset.inst).excluirIndicadores = e.target.checked; scheduleSave(); render(); });
+  wrap.querySelectorAll('.instCnpj').forEach(inp=> inp.oninput = e=>{ instById(e.target.dataset.inst).cnpj = e.target.value; scheduleSave(); });
+  wrap.querySelectorAll('.copyCnpj').forEach(btn=> btn.onclick = async e=>{
+    const inst = instById(e.target.closest('button').dataset.inst);
+    const cnpj = (inst.cnpj||'').trim();
+    if(!cnpj){ toast('Nenhum CNPJ cadastrado para essa instituição.'); return; }
+    try{
+      await navigator.clipboard.writeText(cnpj);
+      toast(`CNPJ de ${inst.nome} copiado!`);
+    }catch(err){
+      toast('Não foi possível copiar automaticamente — selecione o texto manualmente.');
+    }
+  });
   wrap.querySelectorAll('.projSigla').forEach(inp=> inp.oninput = e=>{ projById(e.target.dataset.inst, e.target.dataset.proj).sigla = e.target.value; scheduleSave(); });
   wrap.querySelectorAll('.projNome').forEach(inp=> inp.oninput = e=>{ projById(e.target.dataset.inst, e.target.dataset.proj).nome = e.target.value; scheduleSave(); });
   wrap.querySelectorAll('.tipoNome').forEach(inp=> inp.oninput = e=>{ state.certidaoTipos.find(t=>t.id===e.target.dataset.tipo).nome = e.target.value; scheduleSave(); });
