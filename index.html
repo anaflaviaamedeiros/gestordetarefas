@@ -646,7 +646,7 @@ function instById(id){ return state.instituicoes.find(i=>i.id===id); }
 function projById(instId, projId){ const i=instById(instId); return i && i.projetos.find(p=>p.id===projId); }
 function membroById(id){ return state.membros.find(m=>m.id===id); }
 function currentMembro(){
-  if(!session) return null;
+  if(!session || !state) return null;
   return state.membros.find(m=>normalizeStr(m.nome)===normalizeStr(session.nome)) || null;
 }
 function initials(name){ return (name||'').split(' ').filter(Boolean).slice(0,2).map(w=>w[0]).join('').toUpperCase(); }
@@ -1965,8 +1965,8 @@ document.getElementById('loginPass').addEventListener('keydown', e=>{ if(e.key==
 document.getElementById('loginUser').addEventListener('keydown', e=>{ if(e.key==='Enter') doLogin(); });
 
 async function initApp(){
-  updateUserBox();
   await loadState();
+  updateUserBox();
 }
 
 (function boot(){
