@@ -605,6 +605,10 @@ async function loadState(){
       if(typeof t.criadoEm === 'undefined') t.criadoEm = null;
       if(typeof t.pendenteDesde === 'undefined') t.pendenteDesde = t.pendenteLeituraPara ? (t.criadoEm || null) : null;
       if(typeof t.concluidoEm === 'undefined') t.concluidoEm = null;
+      // "não lida" agora é separado de "pendente com" (ver setPendente/clearPendente) — em dados antigos os dois
+      // campos eram a mesma coisa, então migramos herdando o valor atual como ponto de partida.
+      if(typeof t.naoLidoPara === 'undefined') t.naoLidoPara = t.pendenteLeituraPara;
+      if(!Array.isArray(t.checklist)) t.checklist = [];
     });
     state.membros.forEach(m=>{ if(typeof m.whatsapp === 'undefined') m.whatsapp = ''; if(typeof m.callmebotApiKey === 'undefined') m.callmebotApiKey = ''; });
     state.membros.forEach((m,idx)=>{ if(!m.cor || !USER_PALETTE.includes(m.cor)) m.cor = USER_PALETTE[idx % USER_PALETTE.length]; });
@@ -677,10 +681,18 @@ function avatarBadge(m){
 function setPendente(t, membroId){
   t.pendenteLeituraPara = membroId || null;
   t.pendenteDesde = membroId ? new Date().toISOString() : null;
+  // Toda nova pendência também é, por definição, uma mensagem/tarefa ainda não vista por quem a recebe.
+  t.naoLidoPara = membroId || null;
 }
 function clearPendente(t){
   t.pendenteLeituraPara = null;
   t.pendenteDesde = null;
+}
+// "Lido/Não lido" e "Pendente com" são independentes (ver pedido da Suzana):
+// ler uma mensagem tira o negrito/ponto de "não lida", mas só uma resposta no chat
+// (setPendente transferindo a pendência) tira o nome de "Pendente com".
+function clearNaoLido(t){
+  t.naoLidoPara = null;
 }
 function initials(name){ return (name||'').split(' ').filter(Boolean).slice(0,2).map(w=>w[0]).join('').toUpperCase(); }
 function fmtDate(d){ if(!d) return '—'; const dt = new Date(d+'T00:00:00'); if(isNaN(dt)) return '—'; return dt.toLocaleDateString('pt-BR'); }
@@ -769,6 +781,68 @@ function countCertAlerts(){
   return s.vencidas + s.vencendo;
 }
 
+// Mesmo critério de computeCertStats, mas devolvendo os registros (não só a contagem) —
+// garante que o número do card e a listagem aberta ao clicar batam sempre.
+function computeCertList(kind){
+  const out = [];
+  for(const inst of state.instituicoes){
+    if(inst.excluirIndicadores) continue;
+    for(const tipo of state.certidaoTipos){
+      const c = state.certidoes.find(x=>x.instituicaoId===inst.id && x.tipoId===tipo.id);
+      const du = c ? daysUntil(c.proximoVencimento) : null;
+      if(du===null) continue;
+      if(kind==='vencidas' && du<0) out.push({inst, tipo, cert:c, dias:du});
+      else if(kind==='vencendo' && du>=0 && du<=30) out.push({inst, tipo, cert:c, dias:du});
+    }
+  }
+  out.sort((a,b)=>a.dias-b.dias);
+  return out;
+}
+
+function openCertListModal(kind){
+  const items = computeCertList(kind);
+  const title = kind==='vencidas' ? 'Certidões vencidas' : 'Certidões vencendo em 30 dias';
+  const overlay = document.createElement('div');
+  overlay.className='overlay';
+  overlay.innerHTML = `
+    <div class="modal" style="max-width:680px;">
+      <div class="modal-head"><h2>${title}</h2><button class="modal-close">✕</button></div>
+      <div class="modal-body">
+        ${items.length===0 ? `<div class="hint" style="margin:0;">Nenhum registro nessa condição.</div>` : `
+        <div style="max-height:60vh;overflow-y:auto;border:1px solid var(--line);border-radius:8px;">
+          <table style="width:100%;border-collapse:collapse;font-size:13px;background:var(--white);">
+            <thead><tr style="background:var(--paper-dim);">
+              <th style="position:sticky;top:0;background:var(--paper-dim);text-align:left;padding:8px 10px;">Instituição</th>
+              <th style="position:sticky;top:0;background:var(--paper-dim);text-align:left;padding:8px 10px;">Certidão</th>
+              <th style="position:sticky;top:0;background:var(--paper-dim);text-align:left;padding:8px 10px;">Vencimento</th>
+              <th style="position:sticky;top:0;background:var(--paper-dim);text-align:left;padding:8px 10px;">${kind==='vencidas'?'Dias em atraso':'Dias restantes'}</th>
+            </tr></thead>
+            <tbody>
+              ${items.map(it=>`
+                <tr style="border-top:1px solid var(--line-soft);cursor:pointer;" data-inst="${it.inst.id}" data-tipo="${it.tipo.id}">
+                  <td style="padding:8px 10px;">${escapeHtml(it.inst.nome)}</td>
+                  <td style="padding:8px 10px;">${escapeHtml(it.tipo.nome)}</td>
+                  <td style="padding:8px 10px;font-family:var(--font-mono);">${fmtDate(it.cert.proximoVencimento)}</td>
+                  <td style="padding:8px 10px;font-family:var(--font-mono);color:${kind==='vencidas'?'var(--bad)':'var(--warn)'};">${Math.abs(it.dias)}</td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        </div>`}
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+  function close(){ overlay.remove(); }
+  overlay.querySelector('.modal-close').onclick = close;
+  overlay.onclick = e=>{ if(e.target===overlay) close(); };
+  overlay.querySelectorAll('tbody tr').forEach(tr=>tr.onclick = ()=>{
+    close();
+    activeTab='certidoes'; render();
+    openCertModal(tr.dataset.inst, tr.dataset.tipo);
+  });
+}
+
 function renderBanner(){
   const b = document.getElementById('banner');
   const pendentes = state.tarefas.filter(t=>t.status!=='concluido').length;
@@ -777,9 +851,11 @@ function renderBanner(){
   b.innerHTML = `
     <div class="cell"><div class="num">${pendentes}</div><div class="lbl">Tarefas pendentes</div></div>
     <div class="cell ${atrasadas?'bad':''}"><div class="num">${atrasadas}</div><div class="lbl">Tarefas atrasadas</div></div>
-    <div class="cell ${vencidas?'bad':''}"><div class="num">${vencidas}</div><div class="lbl">Certidões vencidas</div></div>
-    <div class="cell ${vencendo?'warn':''}"><div class="num">${vencendo}</div><div class="lbl">Vencendo em 30 dias</div></div>
+    <div class="cell ${vencidas?'bad':''}" id="cellVencidas" style="cursor:pointer;"><div class="num">${vencidas}</div><div class="lbl">Certidões vencidas</div></div>
+    <div class="cell ${vencendo?'warn':''}" id="cellVencendo" style="cursor:pointer;"><div class="num">${vencendo}</div><div class="lbl">Vencendo em 30 dias</div></div>
   `;
+  b.querySelector('#cellVencidas').onclick = ()=>openCertListModal('vencidas');
+  b.querySelector('#cellVencendo').onclick = ()=>openCertListModal('vencendo');
 }
 
 /* ================== RENDER: TAREFAS ================== */
@@ -817,9 +893,19 @@ function renderTarefas(c){
   const projFilterEl = filterBar.querySelector('#projFilter');
   function refreshProjOptions(){
     const inst = instById(filters.inst);
-    projFilterEl.innerHTML = `<option value="">Todos projetos</option>` +
-      (inst ? inst.projetos.map(p=>`<option value="${p.id}" ${filters.proj===p.id?'selected':''}>${escapeHtml(p.sigla||p.nome)}</option>`).join('') : '');
-    projFilterEl.disabled = !inst;
+    if(inst){
+      projFilterEl.innerHTML = `<option value="">Todos projetos</option>` +
+        inst.projetos.map(p=>`<option value="${p.id}" ${filters.proj===p.id?'selected':''}>${escapeHtml(p.sigla||p.nome)}</option>`).join('');
+    } else {
+      // Sem instituição selecionada: filtro de projeto funciona sozinho, listando todos os projetos
+      // de todas as instituições (uma mesma instituição pode ter vários projetos).
+      const all = [];
+      state.instituicoes.forEach(i=> i.projetos.forEach(p=> all.push({instNome:i.nome, id:p.id, label:p.sigla||p.nome})));
+      all.sort((a,b)=> a.instNome.localeCompare(b.instNome) || a.label.localeCompare(b.label));
+      projFilterEl.innerHTML = `<option value="">Todos projetos</option>` +
+        all.map(p=>`<option value="${p.id}" ${filters.proj===p.id?'selected':''}>${escapeHtml(p.instNome)} — ${escapeHtml(p.label)}</option>`).join('');
+    }
+    projFilterEl.disabled = false;
   }
   refreshProjOptions();
 
@@ -965,7 +1051,7 @@ function renderTarefasLista(c, list){
       <td style="padding:9px 8px;text-align:center;"><input type="checkbox" class="rowCheck" data-id="${t.id}" ${checked?'checked':''}></td>
       <td style="padding:9px 12px;cursor:pointer;"><span class="badge ${info.cls}">${info.label}</span></td>
       <td style="padding:9px 12px;font-family:var(--font-mono);font-size:12px;color:var(--muted);cursor:pointer;">${t.criadoEm?fmtDateTime(t.criadoEm):'—'}</td>
-      <td style="padding:9px 12px;font-weight:${t.pendenteLeituraPara?700:400};cursor:pointer;">${t.pendenteLeituraPara?'<span class="unread-dot"></span>':''}${t.recorrencia?'🔁 ':''}${escapeHtml(t.titulo)}</td>
+      <td style="padding:9px 12px;font-weight:${t.naoLidoPara?700:400};cursor:pointer;">${t.naoLidoPara?'<span class="unread-dot"></span>':''}${t.recorrencia?'🔁 ':''}${escapeHtml(t.titulo)}</td>
       <td style="padding:9px 12px;cursor:pointer;">${escapeHtml(t.tipo||'Outro')}</td>
       <td style="padding:9px 12px;cursor:pointer;">${inst?escapeHtml(inst.nome):'—'}</td>
       <td style="padding:9px 12px;cursor:pointer;">${proj?escapeHtml(proj.sigla||proj.nome):'—'}</td>
@@ -1020,7 +1106,8 @@ function renderCard(t){
       <span class="tag type">${escapeHtml(t.tipo||'Outro')}</span>
       ${inst?`<span class="tag">${escapeHtml(inst.nome)}${proj?` · ${escapeHtml(proj.sigla||proj.nome)}`:''}</span>`:''}
     </div>
-    <h4 style="font-weight:${t.pendenteLeituraPara?800:500};">${t.pendenteLeituraPara?'<span class="unread-dot"></span>':''}${t.recorrencia?'🔁 ':''}${escapeHtml(t.titulo)}</h4>
+    <h4 style="font-weight:${t.naoLidoPara?800:500};">${t.naoLidoPara?'<span class="unread-dot"></span>':''}${t.recorrencia?'🔁 ':''}${escapeHtml(t.titulo)}</h4>
+    ${t.checklist && t.checklist.length ? `<div style="font-size:11px;color:var(--muted);margin:-4px 0 2px;">☑ ${t.checklist.filter(i=>i.feito).length}/${t.checklist.length} do checklist</div>` : ''}
     <div class="meta">
       <div class="who" title="Solicitado por ${solic?escapeHtml(solic.nome):'—'} · Responsável ${resp?escapeHtml(resp.nome):'—'}">
         <span class="avatar" style="${resp?`background:${membroColor(resp)};color:${membroTextColor()};`:''}">${resp?initials(resp.nome):'?'}</span>
@@ -1656,23 +1743,60 @@ function renderConfig(c){
   });
 }
 
+/* ================== MODAL: CADASTRO RÁPIDO DE TIPO DE TAREFA ================== */
+function openQuickTipoModal(onAdded){
+  const overlay = document.createElement('div');
+  overlay.className='overlay';
+  overlay.style.zIndex='300';
+  overlay.innerHTML = `
+    <div class="modal" style="max-width:340px;">
+      <div class="modal-head"><h2>Novo tipo de tarefa</h2><button class="modal-close">✕</button></div>
+      <div class="modal-body">
+        <div class="field"><label>Nome do tipo</label><input id="qt_nome" placeholder="Ex.: Recibo"></div>
+        <div class="modal-actions" style="justify-content:flex-end;">
+          <button class="btn ghost" id="qt_cancel">Cancelar</button>
+          <button class="btn" id="qt_save">Adicionar</button>
+        </div>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+  function close(){ overlay.remove(); }
+  overlay.querySelector('.modal-close').onclick = close;
+  overlay.querySelector('#qt_cancel').onclick = close;
+  overlay.onclick = e=>{ if(e.target===overlay) close(); };
+  const inp = overlay.querySelector('#qt_nome');
+  inp.focus();
+  function save(){
+    const nome = inp.value.trim();
+    if(!nome) return;
+    if(!state.tiposTarefa.includes(nome)){ state.tiposTarefa.push(nome); scheduleSave(); }
+    close();
+    onAdded(nome);
+  }
+  overlay.querySelector('#qt_save').onclick = save;
+  inp.onkeydown = e=>{ if(e.key==='Enter'){ e.preventDefault(); save(); } };
+}
+
 /* ================== MODAL: TAREFA ================== */
 function openTaskModal(taskId){
   const isNew = !taskId;
+  const me = currentMembro();
   const t = isNew ? {
     id: uid(), titulo:'', tipo: state.tiposTarefa[0],
     instituicaoId: filters.inst || (state.instituicoes[0]?state.instituicoes[0].id:''),
-    projetoId:'', solicitanteId:'', responsavelId:'', prazo:'', status:'afazer', descricao:'', recorrencia:null,
+    projetoId:'', solicitanteId: me?me.id:'', responsavelId:'', prazo:'', status:'afazer', descricao:'', recorrencia:null,
     pendenteLeituraPara:null, ultimaLeituraPor:null, ultimaLeituraEm:null, chat:[], criadoEm:null,
-    pendenteDesde:null, concluidoEm:null
+    pendenteDesde:null, concluidoEm:null, naoLidoPara:null, checklist:[]
   } : state.tarefas.find(x=>x.id===taskId);
+  if(!isNew && !Array.isArray(t.checklist)) t.checklist = [];
   const originalStatus = isNew ? null : t.status;
   const originalResponsavelId = isNew ? null : t.responsavelId;
-  const me = currentMembro();
 
-  // marcar como lida assim que a pessoa "aguardada" (responsável OU solicitante, dependendo do momento) abre a tarefa
-  if(!isNew && me && t.pendenteLeituraPara===me.id){
-    clearPendente(t);
+  // marcar como lida assim que a pessoa "aguardada" abre a tarefa — isso só limpa o indicador de
+  // "não lida", NUNCA o "Pendente com": ler uma mensagem não resolve a pendência, só responder resolve.
+  if(!isNew && me && t.naoLidoPara===me.id){
+    clearNaoLido(t);
     t.ultimaLeituraPor = me.id;
     t.ultimaLeituraEm = new Date().toISOString();
     scheduleSave();
@@ -1694,7 +1818,10 @@ function openTaskModal(taskId){
 
         <div class="field-row">
           <div class="field"><label>Tipo</label>
-            <select id="f_tipo">${state.tiposTarefa.map(ti=>`<option ${t.tipo===ti?'selected':''}>${ti}</option>`).join('')}</select>
+            <div style="display:flex;gap:6px;">
+              <select id="f_tipo" style="flex:1;min-width:0;">${state.tiposTarefa.map(ti=>`<option ${t.tipo===ti?'selected':''}>${ti}</option>`).join('')}</select>
+              <button type="button" class="btn ghost small" id="f_tipo_add" title="Cadastrar novo tipo de tarefa" style="flex:none;padding:0 12px;">+</button>
+            </div>
           </div>
           <div class="field"><label>Prazo</label>
             <input id="f_prazo" type="date" value="${t.prazo||''}"></div>
@@ -1711,7 +1838,8 @@ function openTaskModal(taskId){
 
         <div class="field-row">
           <div class="field"><label>Solicitado por</label>
-            <select id="f_solic"><option value="">—</option>${state.membros.map(m=>`<option value="${m.id}" ${t.solicitanteId===m.id?'selected':''}>${escapeHtml(m.nome)}</option>`).join('')}</select>
+            <select id="f_solic" ${isNew?'disabled':''}><option value="">—</option>${state.membros.map(m=>`<option value="${m.id}" ${t.solicitanteId===m.id?'selected':''}>${escapeHtml(m.nome)}</option>`).join('')}</select>
+            ${isNew?`<div class="hint" style="margin-top:4px;">Preenchido automaticamente com seu usuário logado.</div>`:''}
           </div>
           <div class="field"><label>Responsável por executar</label>
             <select id="f_resp"><option value="">—</option>${state.membros.map(m=>`<option value="${m.id}" ${t.responsavelId===m.id?'selected':''}>${escapeHtml(m.nome)}</option>`).join('')}</select>
@@ -1720,6 +1848,16 @@ function openTaskModal(taskId){
 
         <div class="field"><label>Detalhes / orientações</label>
           <textarea id="f_desc" placeholder="Ex.: função, carga horária, valores, período de contratação...">${escapeHtml(t.descricao||'')}</textarea></div>
+
+        <div class="field" id="f_checklist_wrap">
+          <label>Checklist <span id="f_checklist_progress" style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted);"></span></label>
+          <div id="f_checklist_list" style="display:flex;flex-direction:column;gap:6px;"></div>
+          <div style="display:flex;gap:8px;margin-top:8px;">
+            <input id="f_checklist_input" placeholder="Novo item do checklist..." style="flex:1;">
+            <button type="button" class="btn small" id="f_checklist_add">Adicionar</button>
+          </div>
+          <div class="hint" style="margin:4px 0 0;">O checklist é só um apoio — marcar todos os itens não conclui a tarefa. Use o status abaixo para isso.</div>
+        </div>
 
         <div class="field">
           <label style="display:flex;align-items:center;gap:7px;text-transform:none;font-size:13px;color:var(--ink);">
@@ -1782,6 +1920,56 @@ function openTaskModal(taskId){
   }
   refreshProj();
   instSel.onchange = ()=>{ t.projetoId=''; refreshProj(); };
+
+  // ---- Cadastro rápido de tipo de tarefa, sem sair do modal ----
+  overlay.querySelector('#f_tipo_add').onclick = ()=>{
+    openQuickTipoModal(nome=>{
+      const tipoSel = overlay.querySelector('#f_tipo');
+      tipoSel.innerHTML = state.tiposTarefa.map(ti=>`<option ${ti===nome?'selected':''}>${ti}</option>`).join('');
+      toast('Tipo adicionado.');
+    });
+  };
+
+  // ---- Checklist da tarefa (independente do status — ver f_status abaixo) ----
+  const checklistList = overlay.querySelector('#f_checklist_list');
+  const checklistProgress = overlay.querySelector('#f_checklist_progress');
+  function renderChecklist(){
+    const total = t.checklist.length;
+    const done = t.checklist.filter(i=>i.feito).length;
+    checklistProgress.textContent = total ? `— ${done} de ${total} concluído(s)` : '';
+    if(total===0){
+      checklistList.innerHTML = `<div class="hint" style="margin:0;">Nenhum item ainda.</div>`;
+      return;
+    }
+    checklistList.innerHTML = t.checklist.map(item=>`
+      <label style="display:flex;align-items:center;gap:8px;font-size:13.5px;padding:6px 8px;border:1px solid var(--line-soft);border-radius:7px;background:${item.feito?'var(--paper-dim)':'var(--white)'};">
+        <input type="checkbox" data-id="${item.id}" class="chk-item" ${item.feito?'checked':''} style="width:auto;">
+        <span style="flex:1;${item.feito?'text-decoration:line-through;color:var(--muted);':''}">${escapeHtml(item.texto)}</span>
+        <button type="button" class="icon-btn chk-del" data-id="${item.id}" title="Remover item">✕</button>
+      </label>
+    `).join('');
+    checklistList.querySelectorAll('.chk-item').forEach(cb=>cb.onchange = e=>{
+      const item = t.checklist.find(i=>i.id===e.target.dataset.id);
+      if(item){ item.feito = e.target.checked; if(!isNew) scheduleSave(); renderChecklist(); }
+    });
+    checklistList.querySelectorAll('.chk-del').forEach(btn=>btn.onclick = ()=>{
+      t.checklist = t.checklist.filter(i=>i.id!==btn.dataset.id);
+      if(!isNew) scheduleSave();
+      renderChecklist();
+    });
+  }
+  renderChecklist();
+  const checklistInput = overlay.querySelector('#f_checklist_input');
+  function addChecklistItem(){
+    const texto = checklistInput.value.trim();
+    if(!texto) return;
+    t.checklist.push({id: uid(), texto, feito:false});
+    checklistInput.value='';
+    if(!isNew) scheduleSave();
+    renderChecklist();
+  }
+  overlay.querySelector('#f_checklist_add').onclick = addChecklistItem;
+  checklistInput.onkeydown = e=>{ if(e.key==='Enter'){ e.preventDefault(); addChecklistItem(); } };
 
   const recCheckbox = overlay.querySelector('#f_recorrente');
   const recWrap = overlay.querySelector('#f_rec_wrap');
@@ -1966,7 +2154,8 @@ function maybeGenerateNextRecurrence(t, prevStatus, newStatus){
         recorrencia: t.recorrencia,
         pendenteLeituraPara: t.responsavelId || null, ultimaLeituraPor: null, ultimaLeituraEm: null, chat: [],
         criadoEm: new Date().toISOString(),
-        pendenteDesde: t.responsavelId ? new Date().toISOString() : null, concluidoEm: null
+        pendenteDesde: t.responsavelId ? new Date().toISOString() : null, concluidoEm: null,
+        naoLidoPara: t.responsavelId || null, checklist: []
       };
       state.tarefas.push(novaTarefa);
       const resp = membroById(novaTarefa.responsavelId);
