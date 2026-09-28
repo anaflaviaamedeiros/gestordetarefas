@@ -470,6 +470,7 @@ function normalizeProj(p){
   if(!PROJ_STATUS.some(s=>s.id===p.status)) p.status = 'proposta';
   if(typeof p.statusDesde !== 'string') p.statusDesde = '';
   if(!Array.isArray(p.historico)) p.historico = [];
+  if(!Array.isArray(p.registros)) p.registros = [];
   if(!Array.isArray(p.alteracaoTipos)) p.alteracaoTipos = [];
 }
 
@@ -1363,7 +1364,7 @@ function openProjModal(instId, projId){
   const orig = isNew ? null : projById(inst0.id, projId);
   if(!isNew && !orig) return;
   const p = isNew
-    ? {id:uid(), nome:'', codigo:'', origem:'', inicio:'', fim:'', status:'proposta', statusDesde:'', historico:[], alteracaoTipos:[], obs:''}
+    ? {id:uid(), nome:'', codigo:'', origem:'', inicio:'', fim:'', status:'proposta', statusDesde:'', historico:[], registros:[], alteracaoTipos:[], obs:''}
     : JSON.parse(JSON.stringify(orig));
   const me = currentMembro();
 
@@ -1395,6 +1396,15 @@ function openProjModal(instId, projId){
       <div class="check-grid">${ALT_TIPOS.map(a=>`<label><input type="checkbox" class="p_alt" value="${escapeAttr(a)}" ${p.alteracaoTipos.includes(a)?'checked':''}> ${escapeHtml(a)}</label>`).join('')}</div></div>
     <div class="field"><label>Observações</label><textarea id="p_obs" placeholder="Ex.: diligência respondida em 10/10, aguardando parecer...">${escapeHtml(p.obs)}</textarea></div>
 
+    ${!isNew ? `<div class="field"><label>Histórico do projeto</label>
+      <div id="p_reg_list" style="max-height:220px;overflow-y:auto;border:1px solid var(--line);border-radius:8px;padding:8px 10px;background:var(--white);display:flex;flex-direction:column;gap:8px;"></div>
+      <div style="display:flex;gap:6px;margin-top:6px;">
+        <input id="p_reg_input" placeholder="Registrar uma informação, decisão ou atualização..." style="flex:1;">
+        <button class="btn small" id="p_reg_send">Registrar</button>
+      </div>
+      <div class="hint" style="margin:4px 0 0;">Cada registro fica salvo com autor, data e hora automaticamente. Não altera o status do projeto.</div>
+    </div>` : ''}
+
     ${p.historico.length ? `<div class="field"><label>Histórico de status</label><div class="hist">
       ${[...p.historico].reverse().map(h=>`<div><span class="mono muted" style="min-width:78px;">${fmtDate(h.data)}</span>${(()=>{const s=statusById(h.status);return `<span class="badge ${s.cls}">${escapeHtml(s.curto)}</span>`;})()}<span class="muted">${h.por?'por '+escapeHtml(h.por):''}</span></div>`).join('')}
     </div></div>` : ''}
@@ -1424,6 +1434,34 @@ function openProjModal(instId, projId){
   stSel.onchange = syncStatusUI;
   syncStatusUI();
 
+  // Histórico do projeto (registros tipo chat, só informativo — salva na hora, direto no projeto real)
+  if(!isNew){
+    if(!Array.isArray(orig.registros)) orig.registros = [];
+    const regList = overlay.querySelector('#p_reg_list');
+    function renderRegistros(){
+      if(!orig.registros.length){ regList.innerHTML = `<div class="hint" style="margin:0;">Nenhum registro ainda.</div>`; return; }
+      regList.innerHTML = orig.registros.map(reg=>{
+        const autor = reg.autorId ? membroById(reg.autorId) : null;
+        return `<div style="background:var(--paper-dim);border-radius:8px;padding:7px 10px;display:flex;gap:8px;align-items:flex-start;">
+          <span class="avatar" style="background:${autor?membroColor(autor):'var(--ink)'};color:#2b2f38;">${initials(reg.autorNome||'—')}</span>
+          <div><div style="font-size:11.5px;font-weight:700;">${escapeHtml(reg.autorNome||'—')} <span style="font-weight:400;color:var(--muted);">· ${fmtDateTime(reg.criadoEm)}</span></div>
+          <div style="font-size:13px;margin-top:2px;white-space:pre-wrap;word-break:break-word;">${linkifyText(reg.texto)}</div></div></div>`;
+      }).join('');
+      regList.scrollTop = regList.scrollHeight;
+    }
+    renderRegistros();
+    const regInput = overlay.querySelector('#p_reg_input');
+    const sendRegistro = ()=>{
+      const texto = regInput.value.trim();
+      if(!texto) return;
+      orig.registros.push({id:uid(), autorId: me ? me.id : null, autorNome: me ? me.nome : (session?session.nome:'—'), texto, criadoEm:new Date().toISOString()});
+      regInput.value = '';
+      renderRegistros(); scheduleSave();
+    };
+    overlay.querySelector('#p_reg_send').onclick = sendRegistro;
+    regInput.onkeydown = e=>{ if(e.key==='Enter'){ e.preventDefault(); sendRegistro(); } };
+  }
+
   if(!isNew){
     overlay.querySelector('#p_del').onclick = ()=>{
       const nTar = state.tarefas.filter(t=>t.projetoId===p.id).length;
@@ -1450,6 +1488,7 @@ function openProjModal(instId, projId){
     p.origem = overlay.querySelector('#p_origem').value;
     p.inicio = inicio; p.fim = fim;
     p.obs = overlay.querySelector('#p_obs').value;
+    if(!isNew) p.registros = orig.registros; // registros já foram salvos na hora — evita sobrescrever com a cópia antiga
     p.alteracaoTipos = (novoStatus==='alteracao'||novoStatus==='alteracao_aprovada')
       ? [...overlay.querySelectorAll('.p_alt:checked')].map(x=>x.value) : p.alteracaoTipos;
     if(isNew || novoStatus!==p.status){
