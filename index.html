@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Gestor de Projetos</title>
+<title>Gestor de Tarefas</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
@@ -225,8 +225,8 @@
 <div id="app">
   <header class="top">
     <div class="head-left">
-      <div class="brand-mark">GP</div>
-      <div><h1>Gestor de Projetos</h1></div>
+      <div class="brand-mark">GT</div>
+      <div><h1>Gestor de Tarefas</h1></div>
     </div>
     <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;">
       <div class="save-state"><span class="dot" id="saveDot"></span><span id="saveLabel">carregando…</span></div>
@@ -252,7 +252,7 @@
   <div class="modal" style="max-width:360px;">
     <div class="modal-head"><h2>Entrar</h2></div>
     <div class="modal-body">
-      <div class="hint" style="margin:-8px 0 0;">Acesso ao Gestor de Projetos.</div>
+      <div class="hint" style="margin:-8px 0 0;">Acesso ao Gestor de Tarefas.</div>
       <div class="field"><label>Usuário</label><input id="loginUser" placeholder="seu usuário" autocomplete="username"></div>
       <div class="field"><label>Senha</label><input id="loginPass" type="password" placeholder="sua senha" autocomplete="current-password"></div>
       <div id="loginError" style="color:var(--bad);font-size:13px;display:none;"></div>
@@ -264,7 +264,7 @@
 <script>
 /* ================== CONFIGURAÇÃO ================== */
 // Cole aqui a URL do Web App do Google Apps Script (termina em /exec)
-const API_URL = 'https://script.google.com/macros/s/AKfycbyRPTARNuu6XsreTKxfAS-f87-iXMocJA_PyAKxtzY_STeFyKOpuITqBhQ75it0huIh/exec';
+const API_URL = 'https://script.google.com/macros/s/AKfycbxxAKkvW9irUF7klOLRfq_UWxRw7wdG34ibpxUFaxBtjfXA1Lzjx0kFzZoc9cSe1roI/exec';
 
 /* ================== CONSTANTES ================== */
 const uid = () => Math.random().toString(36).slice(2,10);
@@ -377,7 +377,7 @@ async function doLogin(){
     const res = await apiLogin(usuario, senha);
     if(!res.ok){ err.textContent = res.error || 'Usuário ou senha inválidos.'; err.style.display='block'; return; }
     session = { token: res.token, usuario, nome: res.nome || usuario };
-    sessionStorage.setItem('gp_session', JSON.stringify(session));
+    sessionStorage.setItem('gt_session', JSON.stringify(session));
     document.getElementById('loginPass').value = '';
     hideLogin();
     await initApp();
@@ -390,7 +390,7 @@ async function doLogin(){
 
 function doLogout(msg){
   session = null;
-  sessionStorage.removeItem('gp_session');
+  sessionStorage.removeItem('gt_session');
   showLogin(msg);
 }
 
@@ -470,8 +470,8 @@ function normalizeProj(p){
   if(!PROJ_STATUS.some(s=>s.id===p.status)) p.status = 'proposta';
   if(typeof p.statusDesde !== 'string') p.statusDesde = '';
   if(!Array.isArray(p.historico)) p.historico = [];
+  if(!Array.isArray(p.registros)) p.registros = [];
   if(!Array.isArray(p.alteracaoTipos)) p.alteracaoTipos = [];
-  if(!Array.isArray(p.registros)) p.registros = []; // Histórico do Projeto (linha do tempo)
 }
 
 function normalizeState(saved){
@@ -566,15 +566,6 @@ function projBadge(p){ const s = statusById(p.status); return `<span class="badg
 function currentMembro(){
   if(!session || !state) return null;
   return state.membros.find(m=>normalizeStr(m.nome)===normalizeStr(session.nome)) || null;
-}
-// Usuário logado como membro da equipe; se ainda não existir (ex.: nome alterado), é criado agora.
-function ensureCurrentMembro(){
-  let m = currentMembro();
-  if(!m && session){
-    m = {id:uid(), nome:session.nome, whatsapp:'', callmebotApiKey:'', cor: USER_PALETTE[state.membros.length % USER_PALETTE.length]};
-    state.membros.push(m); scheduleSave();
-  }
-  return m;
 }
 function membroColor(m){ return (m && m.cor) ? m.cor : '#eae5d8'; }
 function avatarBadge(m){
@@ -963,7 +954,7 @@ function renderCard(t){
 function openTaskModal(taskId){
   if(state.instituicoes.length===0){ toast('Cadastre pelo menos uma instituição antes (aba Instituições).'); return; }
   const isNew = !taskId;
-  const me = isNew ? ensureCurrentMembro() : currentMembro();
+  const me = currentMembro();
   const t = isNew ? {
     id: uid(), titulo:'', tipo: state.tiposTarefa[0],
     instituicaoId: filters.inst || state.instituicoes[0].id, projetoId: filters.proj || '',
@@ -1003,9 +994,9 @@ function openTaskModal(taskId){
       <div class="field"><label>Projeto</label><select id="f_proj"></select></div>
     </div>
     <div class="field-row">
-      <div class="field"><label>Solicitado por 🔒</label>
-        ${(()=>{ const s = membroById(t.solicitanteId); return `<div id="f_solic" style="display:flex;align-items:center;gap:8px;padding:8px 11px;border:1px solid var(--line);border-radius:8px;background:var(--paper-dim);min-height:38px;cursor:not-allowed;" title="Definido automaticamente — não pode ser alterado">${s?avatarBadge(s)+`<span>${escapeHtml(s.nome)}</span>`:'<span class="muted">—</span>'}</div>`; })()}
-        <div class="hint" style="margin:4px 0 0;">${isNew?'Preenchido automaticamente com o usuário logado.':'Quem criou a tarefa. Não pode ser alterado.'}</div></div>
+      <div class="field"><label>Solicitado por</label>
+        <select id="f_solic" ${isNew?'disabled':''}><option value="">—</option>${state.membros.map(m=>`<option value="${m.id}" ${t.solicitanteId===m.id?'selected':''}>${escapeHtml(m.nome)}</option>`).join('')}</select>
+        ${isNew?`<div class="hint" style="margin:4px 0 0;">Preenchido com seu usuário.</div>`:''}</div>
       <div class="field"><label>Responsável por executar</label>
         <select id="f_resp"><option value="">—</option>${state.membros.map(m=>`<option value="${m.id}" ${t.responsavelId===m.id?'selected':''}>${escapeHtml(m.nome)}</option>`).join('')}</select></div>
     </div>
@@ -1154,15 +1145,14 @@ function openTaskModal(taskId){
     const titulo = overlay.querySelector('#f_titulo').value.trim();
     const tipoVal = overlay.querySelector('#f_tipo').value;
     const prazo = overlay.querySelector('#f_prazo').value;
-    // Solicitante: na criação é sempre o usuário logado; na edição, mantém o original. Não vem da tela.
-    const solicVal = isNew ? (me ? me.id : '') : t.solicitanteId;
+    const solicVal = overlay.querySelector('#f_solic').value;
     const respVal = overlay.querySelector('#f_resp').value;
     const faltando = [];
     if(!titulo) faltando.push('Título');
     if(!tipoVal) faltando.push('Tipo');
     if(!prazo) faltando.push('Prazo');
     if(!instSel.value) faltando.push('Instituição');
-    if(!solicVal && isNew) faltando.push('Solicitado por (usuário logado não identificado — saia e entre de novo)');
+    if(!solicVal) faltando.push('Solicitado por');
     if(!respVal) faltando.push('Responsável');
     if(faltando.length){ toast('Preencha: ' + faltando.join(', ')); return; }
 
@@ -1354,7 +1344,7 @@ function renderProjetos(c){
           ? `<div class="small muted" style="margin-top:3px;">${p.alteracaoTipos.map(escapeHtml).join(' · ')}</div>` : '';
         return `<tr class="click" data-inst="${inst.id}" data-proj="${p.id}">
           <td><span style="display:inline-flex;align-items:center;gap:7px;"><span class="inst-swatch" style="background:${inst.cor}"></span><span title="${escapeAttr(inst.nome)}">${escapeHtml(instLabel(inst))}</span></span></td>
-          <td style="font-weight:600;">${escapeHtml(p.nome)}${p.registros.length?`<div class="small muted" style="font-weight:400;" title="Registros no Histórico do Projeto">📝 ${p.registros.length} registro${p.registros.length>1?'s':''} · último ${fmtDate(p.registros[p.registros.length-1].criadoEm)}</div>`:''}</td>
+          <td style="font-weight:600;">${escapeHtml(p.nome)}</td>
           <td class="mono">${escapeHtml(p.codigo)||'<span class="muted">—</span>'}</td>
           <td>${escapeHtml(p.origem)||'<span class="muted">—</span>'}</td>
           <td class="mono small">${fmtDate(p.inicio)} → ${fmtDate(p.fim)}${fimNote}</td>
@@ -1374,7 +1364,7 @@ function openProjModal(instId, projId){
   const orig = isNew ? null : projById(inst0.id, projId);
   if(!isNew && !orig) return;
   const p = isNew
-    ? {id:uid(), nome:'', codigo:'', origem:'', inicio:'', fim:'', status:'proposta', statusDesde:'', historico:[], alteracaoTipos:[], obs:'', registros:[]}
+    ? {id:uid(), nome:'', codigo:'', origem:'', inicio:'', fim:'', status:'proposta', statusDesde:'', historico:[], registros:[], alteracaoTipos:[], obs:''}
     : JSON.parse(JSON.stringify(orig));
   const me = currentMembro();
 
@@ -1406,15 +1396,14 @@ function openProjModal(instId, projId){
       <div class="check-grid">${ALT_TIPOS.map(a=>`<label><input type="checkbox" class="p_alt" value="${escapeAttr(a)}" ${p.alteracaoTipos.includes(a)?'checked':''}> ${escapeHtml(a)}</label>`).join('')}</div></div>
     <div class="field"><label>Observações</label><textarea id="p_obs" placeholder="Ex.: diligência respondida em 10/10, aguardando parecer...">${escapeHtml(p.obs)}</textarea></div>
 
-    <div class="modal-sub">Histórico do Projeto</div>
-    <div class="hint" style="margin:-6px 0 0;">Linha do tempo de acontecimentos, decisões e alterações. Cada registro fica salvo com seu nome, data e horário, e não pode ser apagado.</div>
-    <div class="field">
-      <div style="display:flex;gap:8px;align-items:flex-end;">
-        <textarea id="p_reg_input" rows="2" placeholder="Escreva um novo registro... (Enter registra · Shift+Enter quebra linha)" style="flex:1;min-height:0;"></textarea>
-        <button type="button" class="btn small" id="p_reg_send" style="flex:none;">Registrar</button>
+    ${!isNew ? `<div class="field"><label>Histórico do projeto</label>
+      <div id="p_reg_list" style="max-height:220px;overflow-y:auto;border:1px solid var(--line);border-radius:8px;padding:8px 10px;background:var(--white);display:flex;flex-direction:column;gap:8px;"></div>
+      <div style="display:flex;gap:6px;margin-top:6px;">
+        <input id="p_reg_input" placeholder="Registrar uma informação, decisão ou atualização..." style="flex:1;">
+        <button class="btn small" id="p_reg_send">Registrar</button>
       </div>
-      <div id="p_reg_list" style="margin-top:10px;max-height:260px;overflow-y:auto;border:1px solid var(--line);border-radius:8px;padding:8px 10px;background:var(--white);display:flex;flex-direction:column;gap:8px;"></div>
-    </div>
+      <div class="hint" style="margin:4px 0 0;">Cada registro fica salvo com autor, data e hora automaticamente. Não altera o status do projeto.</div>
+    </div>` : ''}
 
     ${p.historico.length ? `<div class="field"><label>Histórico de status</label><div class="hist">
       ${[...p.historico].reverse().map(h=>`<div><span class="mono muted" style="min-width:78px;">${fmtDate(h.data)}</span>${(()=>{const s=statusById(h.status);return `<span class="badge ${s.cls}">${escapeHtml(s.curto)}</span>`;})()}<span class="muted">${h.por?'por '+escapeHtml(h.por):''}</span></div>`).join('')}
@@ -1424,37 +1413,6 @@ function openProjModal(instId, projId){
       <div>${!isNew?`<button class="btn danger small" id="p_del">Excluir</button>`:''}</div>
       <div style="display:flex;gap:8px;"><button class="btn ghost" data-close>Cancelar</button><button class="btn" id="p_save">${isNew?'Cadastrar projeto':'Salvar'}</button></div>
     </div>`);
-
-  // ---- Histórico do Projeto ----
-  const regList = overlay.querySelector('#p_reg_list'), regInput = overlay.querySelector('#p_reg_input');
-  function renderRegistros(){
-    if(!p.registros.length){ regList.innerHTML = `<div class="hint" style="margin:0;">Nenhum registro ainda.</div>`; return; }
-    regList.innerHTML = p.registros.map(r=>{
-      const autor = r.autorId ? membroById(r.autorId) : null;
-      const dt = new Date(r.criadoEm);
-      const quando = isNaN(dt) ? '—' : `${dt.toLocaleDateString('pt-BR')} às ${pad2(dt.getHours())}h${pad2(dt.getMinutes())}`;
-      return `<div style="background:var(--paper-dim);border-radius:8px;padding:7px 10px;display:flex;gap:8px;align-items:flex-start;">
-        <span class="avatar" style="background:${autor?membroColor(autor):'var(--ink)'};color:#2b2f38;">${initials(r.autorNome||'—')}</span>
-        <div style="min-width:0;"><div style="font-size:11.5px;font-weight:700;">${escapeHtml(r.autorNome||'—')} <span style="font-weight:400;color:var(--muted);">— ${quando}</span></div>
-        <div style="font-size:13px;margin-top:2px;white-space:pre-wrap;word-break:break-word;">${linkifyText(r.texto)}</div></div></div>`;
-    }).join('');
-    regList.scrollTop = regList.scrollHeight;
-  }
-  renderRegistros();
-  const registrar = ()=>{
-    const texto = regInput.value.trim();
-    if(!texto) return;
-    const reg = {id:uid(), autorId: me?me.id:null, autorNome: me ? me.nome : (session?session.nome:'—'), texto, criadoEm:new Date().toISOString()};
-    p.registros.push(reg);
-    // Projeto já existente: o registro é gravado na hora, mesmo que a janela seja fechada sem "Salvar".
-    if(!isNew){ orig.registros = orig.registros || []; orig.registros.push({...reg}); scheduleSave(); }
-    regInput.value = '';
-    renderRegistros();
-    if(!isNew) render();
-    toast(isNew ? 'Registro incluído — será salvo ao cadastrar o projeto.' : 'Registro salvo no histórico.');
-  };
-  overlay.querySelector('#p_reg_send').onclick = registrar;
-  regInput.onkeydown = e=>{ if(e.key==='Enter' && !e.shiftKey){ e.preventDefault(); registrar(); } };
 
   const origemSel = overlay.querySelector('#p_origem');
   const fillOrigem = sel=>{
@@ -1475,6 +1433,34 @@ function openProjModal(instId, projId){
   }
   stSel.onchange = syncStatusUI;
   syncStatusUI();
+
+  // Histórico do projeto (registros tipo chat, só informativo — salva na hora, direto no projeto real)
+  if(!isNew){
+    if(!Array.isArray(orig.registros)) orig.registros = [];
+    const regList = overlay.querySelector('#p_reg_list');
+    function renderRegistros(){
+      if(!orig.registros.length){ regList.innerHTML = `<div class="hint" style="margin:0;">Nenhum registro ainda.</div>`; return; }
+      regList.innerHTML = orig.registros.map(reg=>{
+        const autor = reg.autorId ? membroById(reg.autorId) : null;
+        return `<div style="background:var(--paper-dim);border-radius:8px;padding:7px 10px;display:flex;gap:8px;align-items:flex-start;">
+          <span class="avatar" style="background:${autor?membroColor(autor):'var(--ink)'};color:#2b2f38;">${initials(reg.autorNome||'—')}</span>
+          <div><div style="font-size:11.5px;font-weight:700;">${escapeHtml(reg.autorNome||'—')} <span style="font-weight:400;color:var(--muted);">· ${fmtDateTime(reg.criadoEm)}</span></div>
+          <div style="font-size:13px;margin-top:2px;white-space:pre-wrap;word-break:break-word;">${linkifyText(reg.texto)}</div></div></div>`;
+      }).join('');
+      regList.scrollTop = regList.scrollHeight;
+    }
+    renderRegistros();
+    const regInput = overlay.querySelector('#p_reg_input');
+    const sendRegistro = ()=>{
+      const texto = regInput.value.trim();
+      if(!texto) return;
+      orig.registros.push({id:uid(), autorId: me ? me.id : null, autorNome: me ? me.nome : (session?session.nome:'—'), texto, criadoEm:new Date().toISOString()});
+      regInput.value = '';
+      renderRegistros(); scheduleSave();
+    };
+    overlay.querySelector('#p_reg_send').onclick = sendRegistro;
+    regInput.onkeydown = e=>{ if(e.key==='Enter'){ e.preventDefault(); sendRegistro(); } };
+  }
 
   if(!isNew){
     overlay.querySelector('#p_del').onclick = ()=>{
@@ -1502,6 +1488,7 @@ function openProjModal(instId, projId){
     p.origem = overlay.querySelector('#p_origem').value;
     p.inicio = inicio; p.fim = fim;
     p.obs = overlay.querySelector('#p_obs').value;
+    if(!isNew) p.registros = orig.registros; // registros já foram salvos na hora — evita sobrescrever com a cópia antiga
     p.alteracaoTipos = (novoStatus==='alteracao'||novoStatus==='alteracao_aprovada')
       ? [...overlay.querySelectorAll('.p_alt:checked')].map(x=>x.value) : p.alteracaoTipos;
     if(isNew || novoStatus!==p.status){
@@ -2379,7 +2366,7 @@ async function initApp(){
 }
 
 (function boot(){
-  const saved = sessionStorage.getItem('gp_session');
+  const saved = sessionStorage.getItem('gt_session');
   if(saved){
     try{ session = JSON.parse(saved); hideLogin(); initApp(); return; }catch(e){}
   }
